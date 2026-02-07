@@ -1,6 +1,7 @@
 {
   "users": {},
   "settings": {
-    "allowUnknownSenders": false
+    "allowUnknownSenders": false,
+    "_note": "This is a template. Configure actual email-to-JID mappings before enabling email integration."
   }
 }

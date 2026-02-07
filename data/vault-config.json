@@ -1,10 +1,10 @@
 {
   "mainVault": {
-    "path": "~/Documents/Obsidian/Main",
+    "path": "~/path/to/your/main/vault",
     "enabled": false
   },
   "privateVault": {
-    "path": "~/Documents/Obsidian/Private",
+    "path": "~/path/to/your/private/vault",
     "enabled": false
   }
 }

@@ -466,6 +466,7 @@ export function getTaskRunLogs(taskId: string, limit = 10): TaskRunLog[] {
 /**
  * Update group participants in the database.
  * Marks existing participants as inactive and inserts/activates current participants.
+ * Uses a transaction to make the change atomic.
  */
 export function updateGroupParticipants(
   groupJid: string,
@@ -473,21 +474,28 @@ export function updateGroupParticipants(
 ): void {
   const now = new Date().toISOString();
 
-  // Mark all existing participants as inactive
-  db.prepare(
-    `UPDATE group_participants SET is_active = 0 WHERE group_jid = ?`,
-  ).run(groupJid);
+  // Wrap in a transaction to make the update atomic
+  const tx = db.transaction(
+    (txGroupJid: string, txParticipants: string[], txNow: string) => {
+      // Mark all existing participants as inactive
+      db.prepare(
+        `UPDATE group_participants SET is_active = 0 WHERE group_jid = ?`,
+      ).run(txGroupJid);
 
-  // Insert or reactivate each participant
-  const stmt = db.prepare(`
-    INSERT INTO group_participants (group_jid, user_jid, joined_at, is_active)
-    VALUES (?, ?, ?, 1)
-    ON CONFLICT(group_jid, user_jid) DO UPDATE SET is_active = 1
-  `);
+      // Insert or reactivate each participant
+      const stmt = db.prepare(`
+        INSERT INTO group_participants (group_jid, user_jid, joined_at, is_active)
+        VALUES (?, ?, ?, 1)
+        ON CONFLICT(group_jid, user_jid) DO UPDATE SET is_active = 1
+      `);
 
-  for (const participant of participants) {
-    stmt.run(groupJid, participant, now);
-  }
+      for (const participant of txParticipants) {
+        stmt.run(txGroupJid, participant, txNow);
+      }
+    },
+  );
+
+  tx(groupJid, participants, now);
 }
 
 /**
@@ -543,7 +551,8 @@ export function setStrangerCache(
   participants: string[],
 ): void {
   const now = new Date().toISOString();
-  const snapshot = JSON.stringify(participants.sort());
+  // Sort a copy of the array to avoid mutating the caller's array
+  const snapshot = JSON.stringify([...participants].sort());
 
   db.prepare(
     `
