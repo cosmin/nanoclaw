@@ -38,7 +38,7 @@ export interface RegisteredGroup {
   folder: string;
   trigger: string;
   added_at: string;
-  contextTier?: ContextTier; // NEW: Context tier for this group
+  context_tier?: ContextTier; // NEW: Context tier for this group
   containerConfig?: ContainerConfig;
 }
 
