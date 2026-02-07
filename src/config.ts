@@ -1,4 +1,5 @@
 import path from 'path';
+import os from 'os';
 import { VaultConfig } from './types.js';
 import { loadJson } from './utils.js';
 
@@ -8,7 +9,7 @@ export const SCHEDULER_POLL_INTERVAL = 60000;
 
 // Absolute paths needed for container mounts
 const PROJECT_ROOT = process.cwd();
-export const HOME_DIR = process.env.HOME || '/Users/user';
+export const HOME_DIR = process.env.HOME || os.homedir();
 
 // Mount security: allowlist stored OUTSIDE project root, never mounted into containers
 export const MOUNT_ALLOWLIST_PATH = path.join(
@@ -54,4 +55,5 @@ export function loadVaultConfig(): VaultConfig {
 }
 
 // Re-export expandPath from mount-security to avoid duplication
+// The mount-security version is more complete (handles bare ~, resolves to absolute)
 export { expandPath } from './mount-security.js';
