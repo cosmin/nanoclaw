@@ -1,4 +1,6 @@
 import path from 'path';
+import { VaultConfig } from './types.js';
+import { loadJson } from './utils.js';
 
 export const ASSISTANT_NAME = process.env.ASSISTANT_NAME || 'Andy';
 export const POLL_INTERVAL = 2000;
@@ -6,7 +8,7 @@ export const SCHEDULER_POLL_INTERVAL = 60000;
 
 // Absolute paths needed for container mounts
 const PROJECT_ROOT = process.cwd();
-const HOME_DIR = process.env.HOME || '/Users/user';
+export const HOME_DIR = process.env.HOME || '/Users/user';
 
 // Mount security: allowlist stored OUTSIDE project root, never mounted into containers
 export const MOUNT_ALLOWLIST_PATH = path.join(
@@ -19,6 +21,7 @@ export const STORE_DIR = path.resolve(PROJECT_ROOT, 'store');
 export const GROUPS_DIR = path.resolve(PROJECT_ROOT, 'groups');
 export const DATA_DIR = path.resolve(PROJECT_ROOT, 'data');
 export const MAIN_GROUP_FOLDER = 'main';
+export const VAULT_CONFIG_PATH = path.join(DATA_DIR, 'vault-config.json');
 
 export const CONTAINER_IMAGE =
   process.env.CONTAINER_IMAGE || 'nanoclaw-agent:latest';
@@ -45,3 +48,14 @@ export const TRIGGER_PATTERN = new RegExp(
 // Uses system timezone by default
 export const TIMEZONE =
   process.env.TZ || Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+export function loadVaultConfig(): VaultConfig {
+  return loadJson<VaultConfig>(VAULT_CONFIG_PATH, {});
+}
+
+export function expandPath(filepath: string): string {
+  if (filepath.startsWith('~/')) {
+    return path.join(HOME_DIR, filepath.slice(2));
+  }
+  return filepath;
+}
