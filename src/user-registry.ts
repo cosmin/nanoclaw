@@ -8,6 +8,13 @@ import { logger } from './logger.js';
 const USER_REGISTRY_PATH = path.join(DATA_DIR, 'users.json');
 
 /**
+ * In-memory cache for user registry with timestamps
+ * Reduces disk I/O for frequent tier lookups
+ */
+let registryCache: { registry: UserRegistry; loadedAt: number } | null = null;
+const CACHE_TTL_MS = 5000; // 5 second cache
+
+/**
  * Normalize JID by removing LID-style suffix (e.g. ":1") from the local part,
  * while preserving the domain (if any).
  */
@@ -23,9 +30,16 @@ function normalizeJid(jid: string): string {
 }
 
 /**
- * Load user registry from disk
+ * Load user registry from disk with caching
  */
 export function loadUserRegistry(): UserRegistry {
+  const now = Date.now();
+
+  // Return cached registry if still valid
+  if (registryCache && now - registryCache.loadedAt < CACHE_TTL_MS) {
+    return registryCache.registry;
+  }
+
   const defaultRegistry: UserRegistry = {
     owner: {
       jid: '',
@@ -33,10 +47,26 @@ export function loadUserRegistry(): UserRegistry {
       addedAt: '',
     },
     family: [],
-    friends: [],
+    friend: [],
   };
 
-  return loadJson<UserRegistry>(USER_REGISTRY_PATH, defaultRegistry);
+  const registry = loadJson<UserRegistry>(USER_REGISTRY_PATH, defaultRegistry);
+
+  // Update cache
+  registryCache = {
+    registry,
+    loadedAt: now,
+  };
+
+  return registry;
+}
+
+/**
+ * Invalidate the registry cache
+ * Call this after modifying the registry to force a reload
+ */
+export function invalidateRegistryCache(): void {
+  registryCache = null;
 }
 
 /**
@@ -55,6 +85,9 @@ export function saveUserRegistry(registry: UserRegistry): void {
 
     // Atomic rename
     fs.renameSync(tmpPath, USER_REGISTRY_PATH);
+
+    // Invalidate cache after write
+    invalidateRegistryCache();
 
     logger.info('[user-registry] Registry saved successfully');
   } catch (error) {
@@ -85,7 +118,7 @@ function getUserTierFromRegistry(
 
   // Check if friend
   if (
-    registry.friends.some((user) => normalizeJid(user.jid) === normalizedJid)
+    registry.friend.some((user) => normalizeJid(user.jid) === normalizedJid)
   ) {
     return 'friend';
   }
@@ -157,7 +190,7 @@ export function addUser(
   if (tier === 'family') {
     registry.family.push(userInfo);
   } else {
-    registry.friends.push(userInfo);
+    registry.friend.push(userInfo);
   }
 
   saveUserRegistry(registry);
@@ -190,14 +223,14 @@ export function removeUser(jid: string): boolean {
     return true;
   }
 
-  // Try to remove from friends
-  const friendIndex = registry.friends.findIndex(
+  // Try to remove from friend
+  const friendIndex = registry.friend.findIndex(
     user => normalizeJid(user.jid) === normalizedJid
   );
   if (friendIndex !== -1) {
-    registry.friends.splice(friendIndex, 1);
+    registry.friend.splice(friendIndex, 1);
     saveUserRegistry(registry);
-    logger.info(`[user-registry] Removed user ${normalizedJid} from friends`);
+    logger.info(`[user-registry] Removed user ${normalizedJid} from friend`);
     return true;
   }
 
@@ -216,7 +249,7 @@ export function getUsersByTier(tier: 'owner' | 'family' | 'friend'): UserInfo[] 
   } else if (tier === 'family') {
     return registry.family;
   } else {
-    return registry.friends;
+    return registry.friend;
   }
 }
 
@@ -241,8 +274,8 @@ export function getUserInfo(jid: string): UserInfo | null {
     return familyUser;
   }
 
-  // Check friends
-  const friendUser = registry.friends.find(
+  // Check friend
+  const friendUser = registry.friend.find(
     user => normalizeJid(user.jid) === normalizedJid
   );
   if (friendUser) {
