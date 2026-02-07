@@ -562,6 +562,10 @@ async function processTaskIpc(
     folder?: string;
     trigger?: string;
     containerConfig?: RegisteredGroup['containerConfig'];
+    // For user management
+    userJid?: string;
+    userName?: string;
+    tier?: 'family' | 'friend';
   },
   sourceGroup: string, // Verified identity from IPC directory
   isMain: boolean, // Verified from directory path
@@ -574,6 +578,20 @@ async function processTaskIpc(
     getTaskById: getTask,
   } = await import('./db.js');
   const { CronExpressionParser } = await import('cron-parser');
+  const {
+    addUser,
+    removeUser,
+    getUsersByTier,
+    getUserTier: getTier,
+  } = await import('./user-registry.js');
+
+  // Determine privilege level from group's context tier
+  const group = Object.values(registeredGroups).find(
+    (g) => g.folder === sourceGroup,
+  );
+  const contextTier = group?.contextTier || 'friend';
+  const isOwner = contextTier === 'owner';
+  const isFamily = contextTier === 'family';
 
   switch (data.type) {
     case 'schedule_task':
@@ -583,11 +601,19 @@ async function processTaskIpc(
         data.schedule_value &&
         data.groupFolder
       ) {
-        // Authorization: non-main groups can only schedule for themselves
+        // Authorization: Only owner and family can schedule tasks
+        // Friends cannot schedule tasks
         const targetGroup = data.groupFolder;
-        if (!isMain && targetGroup !== sourceGroup) {
+        if (!isOwner && !isFamily) {
           logger.warn(
-            { sourceGroup, targetGroup },
+            { contextTier, sourceGroup, targetGroup },
+            'Insufficient privilege for schedule_task',
+          );
+          break;
+        }
+        if (!isOwner && targetGroup !== sourceGroup) {
+          logger.warn(
+            { contextTier, sourceGroup, targetGroup },
             'Unauthorized schedule_task attempt blocked',
           );
           break;
@@ -662,7 +688,7 @@ async function processTaskIpc(
           created_at: new Date().toISOString(),
         });
         logger.info(
-          { taskId, sourceGroup, targetGroup, contextMode },
+          { taskId, sourceGroup, targetGroup, contextMode, contextTier },
           'Task created via IPC',
         );
       }
@@ -671,15 +697,15 @@ async function processTaskIpc(
     case 'pause_task':
       if (data.taskId) {
         const task = getTask(data.taskId);
-        if (task && (isMain || task.group_folder === sourceGroup)) {
+        if (task && (isOwner || (isFamily && task.group_folder === sourceGroup))) {
           updateTask(data.taskId, { status: 'paused' });
           logger.info(
-            { taskId: data.taskId, sourceGroup },
+            { taskId: data.taskId, sourceGroup, contextTier },
             'Task paused via IPC',
           );
         } else {
           logger.warn(
-            { taskId: data.taskId, sourceGroup },
+            { taskId: data.taskId, sourceGroup, contextTier },
             'Unauthorized task pause attempt',
           );
         }
@@ -689,15 +715,15 @@ async function processTaskIpc(
     case 'resume_task':
       if (data.taskId) {
         const task = getTask(data.taskId);
-        if (task && (isMain || task.group_folder === sourceGroup)) {
+        if (task && (isOwner || (isFamily && task.group_folder === sourceGroup))) {
           updateTask(data.taskId, { status: 'active' });
           logger.info(
-            { taskId: data.taskId, sourceGroup },
+            { taskId: data.taskId, sourceGroup, contextTier },
             'Task resumed via IPC',
           );
         } else {
           logger.warn(
-            { taskId: data.taskId, sourceGroup },
+            { taskId: data.taskId, sourceGroup, contextTier },
             'Unauthorized task resume attempt',
           );
         }
@@ -707,15 +733,15 @@ async function processTaskIpc(
     case 'cancel_task':
       if (data.taskId) {
         const task = getTask(data.taskId);
-        if (task && (isMain || task.group_folder === sourceGroup)) {
+        if (task && (isOwner || (isFamily && task.group_folder === sourceGroup))) {
           deleteTask(data.taskId);
           logger.info(
-            { taskId: data.taskId, sourceGroup },
+            { taskId: data.taskId, sourceGroup, contextTier },
             'Task cancelled via IPC',
           );
         } else {
           logger.warn(
-            { taskId: data.taskId, sourceGroup },
+            { taskId: data.taskId, sourceGroup, contextTier },
             'Unauthorized task cancel attempt',
           );
         }
@@ -723,10 +749,10 @@ async function processTaskIpc(
       break;
 
     case 'refresh_groups':
-      // Only main group can request a refresh
-      if (isMain) {
+      // Only owner can request a refresh
+      if (isOwner) {
         logger.info(
-          { sourceGroup },
+          { sourceGroup, contextTier },
           'Group metadata refresh requested via IPC',
         );
         await syncGroupMetadata(true);
@@ -736,23 +762,23 @@ async function processTaskIpc(
           await import('./container-runner.js');
         writeGroups(
           sourceGroup,
-          true,
+          isOwner,
           availableGroups,
           new Set(Object.keys(registeredGroups)),
         );
       } else {
         logger.warn(
-          { sourceGroup },
+          { sourceGroup, contextTier },
           'Unauthorized refresh_groups attempt blocked',
         );
       }
       break;
 
     case 'register_group':
-      // Only main group can register new groups
-      if (!isMain) {
+      // Only owner can register new groups
+      if (!isOwner) {
         logger.warn(
-          { sourceGroup },
+          { sourceGroup, contextTier },
           'Unauthorized register_group attempt blocked',
         );
         break;
@@ -770,6 +796,111 @@ async function processTaskIpc(
           { data },
           'Invalid register_group request - missing required fields',
         );
+      }
+      break;
+
+    case 'add_user':
+      // Only owner can add users
+      if (!isOwner) {
+        logger.warn(
+          { sourceGroup, contextTier },
+          'Unauthorized add_user attempt blocked',
+        );
+        break;
+      }
+      if (data.userJid && data.userName && data.tier) {
+        const success = addUser(data.userJid, data.userName, data.tier);
+        if (success) {
+          logger.info(
+            { userJid: data.userJid, tier: data.tier, sourceGroup },
+            'User added via IPC',
+          );
+        } else {
+          logger.warn(
+            { userJid: data.userJid },
+            'User already exists or add failed',
+          );
+        }
+      } else {
+        logger.warn(
+          { data },
+          'Invalid add_user request - missing required fields',
+        );
+      }
+      break;
+
+    case 'remove_user':
+      // Only owner can remove users
+      if (!isOwner) {
+        logger.warn(
+          { sourceGroup, contextTier },
+          'Unauthorized remove_user attempt blocked',
+        );
+        break;
+      }
+      if (data.userJid) {
+        try {
+          const success = removeUser(data.userJid);
+          if (success) {
+            logger.info(
+              { userJid: data.userJid, sourceGroup },
+              'User removed via IPC',
+            );
+          } else {
+            logger.warn({ userJid: data.userJid }, 'User not found in registry');
+          }
+        } catch (error) {
+          logger.error(
+            { userJid: data.userJid, error },
+            'Failed to remove user (may be owner)',
+          );
+        }
+      } else {
+        logger.warn({ data }, 'Invalid remove_user request - missing userJid');
+      }
+      break;
+
+    case 'list_users':
+      // Only owner and family can list users
+      if (!isOwner && !isFamily) {
+        logger.warn(
+          { sourceGroup, contextTier },
+          'Unauthorized list_users attempt blocked',
+        );
+        break;
+      }
+      try {
+        const ownerUsers = getUsersByTier('owner');
+        const familyUsers = getUsersByTier('family');
+        const friendUsers = getUsersByTier('friend');
+        logger.info(
+          {
+            sourceGroup,
+            contextTier,
+            ownerCount: ownerUsers.length,
+            familyCount: familyUsers.length,
+            friendCount: friendUsers.length,
+          },
+          'Users listed via IPC',
+        );
+        // Note: The actual list would be written to a response file if needed
+        // For now, we just log it as the agent would read from data/users.json
+      } catch (error) {
+        logger.error({ error, sourceGroup }, 'Failed to list users');
+      }
+      break;
+
+    case 'get_my_tier':
+      // All users can check their own tier
+      // This would require the userJid to be passed in the data
+      if (data.userJid) {
+        const tier = getTier(data.userJid);
+        logger.info(
+          { userJid: data.userJid, tier, sourceGroup },
+          'User tier queried via IPC',
+        );
+      } else {
+        logger.warn({ data }, 'Invalid get_my_tier request - missing userJid');
       }
       break;
 
