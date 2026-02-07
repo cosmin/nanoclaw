@@ -230,12 +230,12 @@ Read `src/db.ts` and find the `storeMessage` function. Update its signature and 
 
 Change the function signature from:
 ```typescript
-export function storeMessage(msg: proto.IWebMessageInfo, chatJid: string, isFromMe: boolean, pushName?: string): void
+export function storeMessage(msg: proto.IWebMessageInfo, chatJid: string, pushName?: string): void
 ```
 
 To:
 ```typescript
-export function storeMessage(msg: proto.IWebMessageInfo, chatJid: string, isFromMe: boolean, pushName?: string, transcribedContent?: string): void
+export function storeMessage(msg: proto.IWebMessageInfo, chatJid: string, pushName?: string, transcribedContent?: string): void
 ```
 
 Update the content extraction to use transcribed content if provided:

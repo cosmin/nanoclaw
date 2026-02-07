@@ -348,7 +348,7 @@ function buildVolumeMounts(
     const validatedMounts = validateAdditionalMounts(
       group.containerConfig.additionalMounts,
       group.name,
-      isMain,
+      contextTier,
     );
     mounts.push(...validatedMounts);
   }

@@ -56,7 +56,7 @@ let lastTimestamp = '';
 let sessions: Session = {};
 let registeredGroups: Record<string, RegisteredGroup> = {};
 let lastAgentTimestamp: Record<string, string> = {};
-// LID to phone number mapping (WhatsApp now sends LID JIDs for self-chats)
+// LID to phone number mapping loaded from Baileys auth state
 let lidToPhoneMap: Record<string, string> = {};
 // Guards to prevent duplicate loops on WhatsApp reconnect
 let messageLoopRunning = false;
@@ -64,7 +64,36 @@ let ipcWatcherRunning = false;
 let groupSyncTimerStarted = false;
 
 /**
- * Translate a JID from LID format to phone format if we have a mapping.
+ * Load all LID→phone mappings from Baileys auth state files.
+ * Baileys stores reverse mappings as `lid-mapping-{lidUser}_reverse.json` → phoneUser.
+ */
+function loadLidMappings(): void {
+  const authDir = path.join(STORE_DIR, 'auth');
+  try {
+    const files = fs.readdirSync(authDir);
+    let count = 0;
+    for (const file of files) {
+      const match = file.match(/^lid-mapping-(\d+)_reverse\.json$/);
+      if (!match) continue;
+      const lidUser = match[1];
+      try {
+        const phoneUser = JSON.parse(fs.readFileSync(path.join(authDir, file), 'utf-8'));
+        if (typeof phoneUser === 'string') {
+          lidToPhoneMap[lidUser] = `${phoneUser}@s.whatsapp.net`;
+          count++;
+        }
+      } catch {
+        // skip invalid files
+      }
+    }
+    logger.info({ count }, 'Loaded LID-to-phone mappings from auth state');
+  } catch (err) {
+    logger.warn({ err }, 'Failed to load LID mappings from auth state');
+  }
+}
+
+/**
+ * Translate a JID from LID format to phone format using Baileys mappings.
  * Returns the original JID if no mapping exists.
  */
 function translateJid(jid: string): string {
@@ -190,7 +219,7 @@ async function processMessage(msg: NewMessage): Promise<void> {
   const content = msg.content.trim();
   const isMainGroup = group.folder === MAIN_GROUP_FOLDER;
   const isGroupChat = msg.chat_jid.endsWith('@g.us');
-  const senderJid = msg.sender;
+  const senderJid = translateJid(msg.sender);
 
   // ========== PHASE 2: TIER-BASED AUTHORIZATION ==========
 
@@ -315,7 +344,6 @@ async function processMessage(msg: NewMessage): Promise<void> {
   const missedMessages = getMessagesSince(
     msg.chat_jid,
     sinceTimestamp,
-    ASSISTANT_NAME,
   );
 
   const lines = missedMessages.map((m) => {
@@ -348,7 +376,7 @@ async function processMessage(msg: NewMessage): Promise<void> {
 
   if (response) {
     lastAgentTimestamp[msg.chat_jid] = msg.timestamp;
-    await sendMessage(msg.chat_jid, `${ASSISTANT_NAME}: ${response}`);
+    await sendMessage(msg.chat_jid, response);
   }
 }
 
@@ -472,9 +500,9 @@ function startIpcWatcher(): void {
                   isMain ||
                   (targetGroup && targetGroup.folder === sourceGroup)
                 ) {
-                  await sendMessage(
+                    await sendMessage(
                     data.chatJid,
-                    `${ASSISTANT_NAME}: ${data.text}`,
+                    data.text,
                   );
                   logger.info(
                     { chatJid: data.chatJid, sourceGroup },
@@ -955,15 +983,8 @@ async function connectWhatsApp(): Promise<void> {
     } else if (connection === 'open') {
       logger.info('Connected to WhatsApp');
       
-      // Build LID to phone mapping from auth state for self-chat translation
-      if (sock.user) {
-        const phoneUser = sock.user.id.split(':')[0];
-        const lidUser = sock.user.lid?.split(':')[0];
-        if (lidUser && phoneUser) {
-          lidToPhoneMap[lidUser] = `${phoneUser}@s.whatsapp.net`;
-          logger.debug({ lidUser, phoneUser }, 'LID to phone mapping set');
-        }
-      }
+      // Load all LID-to-phone mappings from Baileys auth state
+      loadLidMappings();
       
       // Sync group metadata on startup (respects 24h cache)
       syncGroupMetadata().catch((err) =>
@@ -993,12 +1014,13 @@ async function connectWhatsApp(): Promise<void> {
   sock.ev.on('messages.upsert', ({ messages }) => {
     for (const msg of messages) {
       if (!msg.message) continue;
+      if (msg.key.fromMe) continue; // Ignore bot's own outgoing messages
       const rawJid = msg.key.remoteJid;
       if (!rawJid || rawJid === 'status@broadcast') continue;
 
       // Translate LID JID to phone JID if applicable
       const chatJid = translateJid(rawJid);
-      
+
       const timestamp = new Date(
         Number(msg.messageTimestamp) * 1000,
       ).toISOString();
@@ -1011,7 +1033,6 @@ async function connectWhatsApp(): Promise<void> {
         storeMessage(
           msg,
           chatJid,
-          msg.key.fromMe || false,
           msg.pushName || undefined,
         );
       }
@@ -1030,7 +1051,7 @@ async function startMessageLoop(): Promise<void> {
   while (true) {
     try {
       const jids = Object.keys(registeredGroups);
-      const { messages } = getNewMessages(jids, lastTimestamp, ASSISTANT_NAME);
+      const { messages } = getNewMessages(jids, lastTimestamp);
 
       if (messages.length > 0)
         logger.info({ count: messages.length }, 'New messages');
