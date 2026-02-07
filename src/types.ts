@@ -93,7 +93,7 @@ export interface UserInfo {
 export interface UserRegistry {
   owner: UserInfo;
   family: UserInfo[];
-  friends: UserInfo[];
+  friend: UserInfo[];
 }
 
 // Vault Configuration Types

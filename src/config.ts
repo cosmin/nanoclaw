@@ -53,9 +53,5 @@ export function loadVaultConfig(): VaultConfig {
   return loadJson<VaultConfig>(VAULT_CONFIG_PATH, {});
 }
 
-export function expandPath(filepath: string): string {
-  if (filepath.startsWith('~/')) {
-    return path.join(HOME_DIR, filepath.slice(2));
-  }
-  return filepath;
-}
+// Re-export expandPath from mount-security to avoid duplication
+export { expandPath } from './mount-security.js';
