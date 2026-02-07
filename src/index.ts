@@ -42,6 +42,12 @@ import { startSchedulerLoop } from './task-scheduler.js';
 import { NewMessage, RegisteredGroup, Session } from './types.js';
 import { loadJson, saveJson } from './utils.js';
 import { logger } from './logger.js';
+import { getUserTier, getUsersByTier } from './user-registry.js';
+import {
+  canInvoke,
+  hasStrangers,
+  determineAgentContext,
+} from './authorization.js';
 
 const GROUP_SYNC_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
