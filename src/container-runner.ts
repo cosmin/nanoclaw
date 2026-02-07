@@ -13,10 +13,12 @@ import {
   CONTAINER_TIMEOUT,
   DATA_DIR,
   GROUPS_DIR,
+  loadVaultConfig,
+  expandPath,
 } from './config.js';
 import { logger } from './logger.js';
 import { validateAdditionalMounts } from './mount-security.js';
-import { RegisteredGroup } from './types.js';
+import { ContextTier, RegisteredGroup } from './types.js';
 
 // Sentinel markers for robust output parsing (must match agent-runner)
 const OUTPUT_START_MARKER = '---NANOCLAW_OUTPUT_START---';
@@ -54,62 +56,233 @@ interface VolumeMount {
   readonly?: boolean;
 }
 
+/**
+ * Get the session directory path based on context tier
+ * Owner: data/sessions/owner/.claude/
+ * Family: data/sessions/family/.claude/
+ * Friend: data/sessions/friends/{group}/.claude/
+ */
+function getSessionDirPath(groupFolder: string, tier: ContextTier): string {
+  switch (tier) {
+    case 'owner':
+      return path.join(DATA_DIR, 'sessions', 'owner', '.claude');
+    case 'family':
+      return path.join(DATA_DIR, 'sessions', 'family', '.claude');
+    case 'friend':
+      return path.join(DATA_DIR, 'sessions', 'friends', groupFolder, '.claude');
+  }
+}
+
+/**
+ * Validate that a vault path exists and is not blocked
+ * Throws error if invalid
+ */
+function validateVaultMount(vaultPath: string, vaultName: string): void {
+  if (!fs.existsSync(vaultPath)) {
+    throw new Error(
+      `${vaultName} vault path does not exist: ${vaultPath}. ` +
+        `Please verify the path in data/vault-config.json or disable the vault.`,
+    );
+  }
+
+  // Check against blocked patterns to prevent mounting sensitive directories
+  const blockedPatterns = ['.ssh', '.gnupg', '.gpg', '.aws', 'credentials'];
+  const lowerPath = vaultPath.toLowerCase();
+  for (const pattern of blockedPatterns) {
+    if (lowerPath.includes(pattern)) {
+      throw new Error(
+        `${vaultName} vault path contains blocked pattern "${pattern}": ${vaultPath}. ` +
+          `Vaults cannot be mounted from sensitive directories.`,
+      );
+    }
+  }
+
+  // Ensure it's a directory
+  const stat = fs.statSync(vaultPath);
+  if (!stat.isDirectory()) {
+    throw new Error(
+      `${vaultName} vault path is not a directory: ${vaultPath}`,
+    );
+  }
+}
+
 function buildVolumeMounts(
   group: RegisteredGroup,
   isMain: boolean,
 ): VolumeMount[] {
   const mounts: VolumeMount[] = [];
-  const homeDir = getHomeDir();
   const projectRoot = process.cwd();
 
-  if (isMain) {
-    // Main gets the entire project root mounted
-    mounts.push({
-      hostPath: projectRoot,
-      containerPath: '/workspace/project',
-      readonly: false,
-    });
+  // Determine context tier: use group's contextTier if set, otherwise fall back to isMain logic
+  // If no contextTier is set, assume 'owner' for main group, 'friend' for others (legacy behavior)
+  const contextTier: ContextTier = group.contextTier || (isMain ? 'owner' : 'friend');
 
-    // Main also gets its group folder as the working directory
-    mounts.push({
-      hostPath: path.join(GROUPS_DIR, group.folder),
-      containerPath: '/workspace/group',
-      readonly: false,
-    });
-  } else {
-    // Other groups only get their own folder
-    mounts.push({
-      hostPath: path.join(GROUPS_DIR, group.folder),
-      containerPath: '/workspace/group',
-      readonly: false,
-    });
+  logger.debug(
+    {
+      group: group.name,
+      contextTier,
+      isMain,
+      hasExplicitTier: !!group.contextTier,
+    },
+    'Building volume mounts for tier-based access',
+  );
 
-    // Global memory directory (read-only for non-main)
-    // Apple Container only supports directory mounts, not file mounts
-    const globalDir = path.join(GROUPS_DIR, 'global');
-    if (fs.existsSync(globalDir)) {
+  // Load vault configuration
+  const vaultConfig = loadVaultConfig();
+
+  // Mount vaults and project root based on tier
+  switch (contextTier) {
+    case 'owner':
+      // Owner: Project root + private vault + main vault + group folder + session
+      logger.info({ group: group.name }, 'Owner tier: mounting project root + both vaults');
+
+      // Project root (read-write)
       mounts.push({
-        hostPath: globalDir,
-        containerPath: '/workspace/global',
-        readonly: true,
+        hostPath: projectRoot,
+        containerPath: '/workspace/project',
+        readonly: false,
       });
-    }
+
+      // Private vault (owner-only, read-write)
+      if (vaultConfig.privateVault?.enabled && vaultConfig.privateVault.path) {
+        const privateVaultPath = expandPath(vaultConfig.privateVault.path);
+        try {
+          validateVaultMount(privateVaultPath, 'Private');
+          mounts.push({
+            hostPath: privateVaultPath,
+            containerPath: '/workspace/vaults/private',
+            readonly: false,
+          });
+          logger.info(
+            { path: privateVaultPath },
+            'Private vault mounted for owner',
+          );
+        } catch (err) {
+          logger.error(
+            {
+              group: group.name,
+              path: privateVaultPath,
+              error: err instanceof Error ? err.message : String(err),
+            },
+            'Failed to mount private vault - skipping',
+          );
+        }
+      }
+
+      // Main vault (read-write for owner)
+      if (vaultConfig.mainVault?.enabled && vaultConfig.mainVault.path) {
+        const mainVaultPath = expandPath(vaultConfig.mainVault.path);
+        try {
+          validateVaultMount(mainVaultPath, 'Main');
+          mounts.push({
+            hostPath: mainVaultPath,
+            containerPath: '/workspace/vaults/main',
+            readonly: false,
+          });
+          logger.info({ path: mainVaultPath }, 'Main vault mounted for owner');
+        } catch (err) {
+          logger.error(
+            {
+              group: group.name,
+              path: mainVaultPath,
+              error: err instanceof Error ? err.message : String(err),
+            },
+            'Failed to mount main vault - skipping',
+          );
+        }
+      }
+
+      // Group folder
+      mounts.push({
+        hostPath: path.join(GROUPS_DIR, group.folder),
+        containerPath: '/workspace/group',
+        readonly: false,
+      });
+      break;
+
+    case 'family':
+      // Family: Main vault + group folder + session (NO private vault, NO project root)
+      logger.info({ group: group.name }, 'Family tier: mounting main vault only');
+
+      // Main vault (read-write for family)
+      if (vaultConfig.mainVault?.enabled && vaultConfig.mainVault.path) {
+        const mainVaultPath = expandPath(vaultConfig.mainVault.path);
+        try {
+          validateVaultMount(mainVaultPath, 'Main');
+          mounts.push({
+            hostPath: mainVaultPath,
+            containerPath: '/workspace/vaults/main',
+            readonly: false,
+          });
+          logger.info({ path: mainVaultPath }, 'Main vault mounted for family');
+        } catch (err) {
+          logger.error(
+            {
+              group: group.name,
+              path: mainVaultPath,
+              error: err instanceof Error ? err.message : String(err),
+            },
+            'Failed to mount main vault - skipping',
+          );
+        }
+      }
+
+      // Group folder
+      mounts.push({
+        hostPath: path.join(GROUPS_DIR, group.folder),
+        containerPath: '/workspace/group',
+        readonly: false,
+      });
+
+      // Global memory directory (read-only for family)
+      const globalDirFamily = path.join(GROUPS_DIR, 'global');
+      if (fs.existsSync(globalDirFamily)) {
+        mounts.push({
+          hostPath: globalDirFamily,
+          containerPath: '/workspace/global',
+          readonly: true,
+        });
+      }
+      break;
+
+    case 'friend':
+      // Friend: Group folder + session only (NO vaults, NO project root)
+      logger.info({ group: group.name }, 'Friend tier: group folder only, no vault access');
+
+      // Group folder only
+      mounts.push({
+        hostPath: path.join(GROUPS_DIR, group.folder),
+        containerPath: '/workspace/group',
+        readonly: false,
+      });
+
+      // Global memory directory (read-only for friends)
+      const globalDirFriend = path.join(GROUPS_DIR, 'global');
+      if (fs.existsSync(globalDirFriend)) {
+        mounts.push({
+          hostPath: globalDirFriend,
+          containerPath: '/workspace/global',
+          readonly: true,
+        });
+      }
+      break;
   }
 
-  // Per-group Claude sessions directory (isolated from other groups)
-  // Each group gets their own .claude/ to prevent cross-group session access
-  const groupSessionsDir = path.join(
-    DATA_DIR,
-    'sessions',
-    group.folder,
-    '.claude',
-  );
-  fs.mkdirSync(groupSessionsDir, { recursive: true });
+  // Tier-aware session directory
+  // Owner: data/sessions/owner/.claude/
+  // Family: data/sessions/family/.claude/
+  // Friend: data/sessions/friends/{group}/.claude/
+  const sessionDir = getSessionDirPath(group.folder, contextTier);
+  fs.mkdirSync(sessionDir, { recursive: true });
   mounts.push({
-    hostPath: groupSessionsDir,
+    hostPath: sessionDir,
     containerPath: '/home/node/.claude',
     readonly: false,
   });
+  logger.debug(
+    { tier: contextTier, path: sessionDir },
+    'Session directory mounted',
+  );
 
   // Per-group IPC namespace: each group gets its own IPC directory
   // This prevents cross-group privilege escalation via IPC
