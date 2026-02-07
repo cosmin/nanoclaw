@@ -91,7 +91,7 @@ export function saveUserRegistry(registry: UserRegistry): void {
 
     logger.info('[user-registry] Registry saved successfully');
   } catch (error) {
-    logger.error('[user-registry] Failed to save registry:', error);
+    logger.error({ error }, '[user-registry] Failed to save registry');
     throw error;
   }
 }
