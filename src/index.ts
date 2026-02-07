@@ -1094,8 +1094,73 @@ function ensureContainerSystemRunning(): void {
   }
 }
 
+/**
+ * Migrate session structure from single main session to tier-based sessions.
+ *
+ * Old structure: data/sessions/main/.claude/
+ * New structure:
+ *   - data/sessions/owner/.claude/ (for owner)
+ *   - data/sessions/family/.claude/ (for family)
+ *   - data/sessions/friends/{group}/.claude/ (per-group for friends)
+ *
+ * This function is idempotent and safe to run multiple times.
+ */
+function migrateSessionStructure(): void {
+  const sessionsDir = path.join(DATA_DIR, 'sessions');
+  const oldMainPath = path.join(sessionsDir, 'main', '.claude');
+  const newOwnerPath = path.join(sessionsDir, 'owner', '.claude');
+  const familyPath = path.join(sessionsDir, 'family', '.claude');
+  const friendsDir = path.join(sessionsDir, 'friends');
+
+  // Check if migration already completed
+  if (fs.existsSync(newOwnerPath)) {
+    logger.debug('Session structure already migrated (owner session exists)');
+    return;
+  }
+
+  logger.info('Starting session structure migration...');
+
+  // Create backup if old main session exists
+  if (fs.existsSync(oldMainPath)) {
+    const backupPath = path.join(sessionsDir, `main-backup-${Date.now()}`);
+    try {
+      fs.cpSync(path.join(sessionsDir, 'main'), backupPath, { recursive: true });
+      logger.info({ backupPath }, 'Created backup of old main session');
+    } catch (err) {
+      logger.error({ err, backupPath }, 'Failed to create backup');
+      throw new Error('Migration aborted: could not create backup');
+    }
+
+    // Migrate main → owner
+    try {
+      fs.mkdirSync(path.dirname(newOwnerPath), { recursive: true });
+      fs.cpSync(oldMainPath, newOwnerPath, { recursive: true });
+      logger.info({ from: oldMainPath, to: newOwnerPath }, 'Migrated main session to owner');
+    } catch (err) {
+      logger.error({ err }, 'Failed to migrate main session to owner');
+      throw new Error('Migration aborted: could not copy session data');
+    }
+  } else {
+    // No old session, just create new owner directory
+    fs.mkdirSync(newOwnerPath, { recursive: true });
+    logger.info({ path: newOwnerPath }, 'Created new owner session directory');
+  }
+
+  // Create family session directory
+  fs.mkdirSync(familyPath, { recursive: true });
+  logger.info({ path: familyPath }, 'Created family session directory');
+
+  // Create friends session directory
+  fs.mkdirSync(friendsDir, { recursive: true });
+  logger.info({ path: friendsDir }, 'Created friends session directory');
+
+  logger.info('Session structure migration completed successfully');
+  logger.info('Note: Old main session backed up and can be removed manually once verified');
+}
+
 async function main(): Promise<void> {
   ensureContainerSystemRunning();
+  migrateSessionStructure();
   initDatabase();
   logger.info('Database initialized');
   loadState();
