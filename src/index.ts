@@ -183,9 +183,126 @@ async function processMessage(msg: NewMessage): Promise<void> {
 
   const content = msg.content.trim();
   const isMainGroup = group.folder === MAIN_GROUP_FOLDER;
+  const isGroupChat = msg.chat_jid.endsWith('@g.us');
+  const senderJid = msg.sender;
 
-  // Main group responds to all messages; other groups require trigger prefix
-  if (!isMainGroup && !TRIGGER_PATTERN.test(content)) return;
+  // ========== PHASE 2: TIER-BASED AUTHORIZATION ==========
+
+  // Get sender tier
+  const senderTier = getUserTier(senderJid);
+  logger.info(
+    { senderJid, senderTier, chatJid: msg.chat_jid },
+    '[authorization] Message received',
+  );
+
+  // Stranger detection for group chats
+  if (isGroupChat) {
+    try {
+      const metadata = await sock.groupMetadata(msg.chat_jid);
+      const participants = metadata.participants.map((p) => p.id);
+
+      if (hasStrangers(msg.chat_jid, participants)) {
+        logger.warn(
+          {
+            chatJid: msg.chat_jid,
+            groupName: group.name,
+            senderJid,
+          },
+          '[authorization] Strangers detected in group - ignoring thread',
+        );
+
+        // Notify owner about stranger in group
+        const ownerUsers = getUsersByTier('owner');
+        if (ownerUsers.length > 0 && ownerUsers[0].jid) {
+          const ownerJid = ownerUsers[0].jid;
+          const warningMsg = `⚠️ Security Alert: Strangers detected in group "${group.name}". All messages from this group are being ignored until strangers are removed or added to your user registry.`;
+          await sendMessage(ownerJid, warningMsg);
+          logger.info(
+            { ownerJid, groupName: group.name },
+            '[authorization] Notified owner of strangers in group',
+          );
+        }
+        return; // Ignore entire thread
+      }
+    } catch (err) {
+      logger.error(
+        { err, chatJid: msg.chat_jid },
+        '[authorization] Failed to fetch group metadata for stranger detection',
+      );
+      // Fail secure: if we can't check for strangers, don't process
+      return;
+    }
+  }
+
+  // Check message trigger (main group or explicit @trigger)
+  const hasTrigger = isMainGroup || TRIGGER_PATTERN.test(content);
+
+  // Authorization check: can this user invoke Jarvis?
+  const authResult = canInvoke(senderJid, isGroupChat);
+
+  // Handle based on authorization result and trigger
+  if (!authResult.canInvoke) {
+    // Friends and strangers cannot invoke Jarvis
+    if (senderTier === 'friend' && hasTrigger) {
+      logger.info(
+        {
+          senderJid,
+          senderTier,
+          chatJid: msg.chat_jid,
+        },
+        '[authorization] Friend attempted to invoke - storing as passive context only',
+      );
+      // Message is already stored in DB - just don't process
+      return;
+    }
+
+    // Strangers are ignored completely (already handled above for groups)
+    logger.info(
+      {
+        senderJid,
+        senderTier,
+        reason: authResult.reason,
+      },
+      '[authorization] User cannot invoke - ignoring',
+    );
+    return;
+  }
+
+  // Owner/Family can invoke - check for trigger requirement
+  if (!hasTrigger) {
+    // Store as passive context for later use
+    logger.debug(
+      {
+        senderJid,
+        senderTier,
+        chatJid: msg.chat_jid,
+      },
+      '[authorization] Authorized user message without trigger - passive context',
+    );
+    return;
+  }
+
+  // ========== LEGACY GROUP-BASED CHECK (Dual Authorization) ==========
+  // Keep existing group registration checks as fallback
+  if (!isMainGroup && !TRIGGER_PATTERN.test(content)) {
+    return;
+  }
+
+  // ========== MESSAGE PROCESSING ==========
+
+  // Determine which agent context to use based on tier and group config
+  const agentContextTier = determineAgentContext(
+    senderTier,
+    group.contextTier,
+  );
+  logger.info(
+    {
+      senderTier,
+      groupContextTier: group.contextTier,
+      agentContextTier,
+    },
+    '[authorization] Determined agent context',
+  );
 
   // Get all messages since last agent interaction so the session has full context
   const sinceTimestamp = lastAgentTimestamp[msg.chat_jid] || '';
@@ -210,7 +327,12 @@ async function processMessage(msg: NewMessage): Promise<void> {
   if (!prompt) return;
 
   logger.info(
-    { group: group.name, messageCount: missedMessages.length },
+    {
+      group: group.name,
+      messageCount: missedMessages.length,
+      senderTier,
+      agentContextTier,
+    },
     'Processing message',
   );
 
@@ -223,6 +345,7 @@ async function processMessage(msg: NewMessage): Promise<void> {
     await sendMessage(msg.chat_jid, `${ASSISTANT_NAME}: ${response}`);
   }
 }
+
 
 async function runAgent(
   group: RegisteredGroup,
