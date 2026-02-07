@@ -1,5 +1,6 @@
 import { logger } from './logger.js';
 import { getUserTier } from './user-registry.js';
+import { normalizeJid } from './utils.js';
 import {
   UserTier,
   ContextTier,
@@ -27,21 +28,6 @@ const strangerCache = new Map<string, StrangerCacheEntry>();
  * Cache TTL: 5 minutes (300000ms)
  */
 const CACHE_TTL = 300000;
-
-/**
- * Normalize JID by removing LID-style suffix (e.g. ":1") from the local part,
- * while preserving the domain (if any).
- */
-function normalizeJid(jid: string): string {
-  // Split into local part and domain (if present)
-  const [localPart, domain] = jid.split('@', 2);
-
-  // Remove any suffix after the first ":" only from the local part
-  const normalizedLocal = localPart.split(':')[0];
-
-  // Reattach domain if it exists
-  return domain ? `${normalizedLocal}@${domain}` : normalizedLocal;
-}
 
 /**
  * Check if a user can invoke Jarvis

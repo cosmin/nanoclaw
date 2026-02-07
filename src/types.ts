@@ -38,11 +38,7 @@ export interface RegisteredGroup {
   folder: string;
   trigger: string;
   added_at: string;
-<<<<<<< HEAD
-  context_tier?: ContextTier; // NEW: Context tier for this group
-=======
   contextTier?: ContextTier; // NEW: Context tier for this group
->>>>>>> 97ca983 (feat: add type definitions for jarvis transformation)
   containerConfig?: ContainerConfig;
 }
 

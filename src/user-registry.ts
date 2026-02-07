@@ -1,7 +1,7 @@
 import path from 'path';
 import fs from 'fs';
 import { UserRegistry, UserInfo, UserTier } from './types.js';
-import { loadJson } from './utils.js';
+import { loadJson, normalizeJid } from './utils.js';
 import { DATA_DIR } from './config.js';
 import { logger } from './logger.js';
 
@@ -13,21 +13,6 @@ const USER_REGISTRY_PATH = path.join(DATA_DIR, 'users.json');
  */
 let registryCache: { registry: UserRegistry; loadedAt: number } | null = null;
 const CACHE_TTL_MS = 5000; // 5 second cache
-
-/**
- * Normalize JID by removing LID-style suffix (e.g. ":1") from the local part,
- * while preserving the domain (if any).
- */
-function normalizeJid(jid: string): string {
-  // Split into local part and domain (if present)
-  const [localPart, domain] = jid.split('@', 2);
-
-  // Remove any suffix after the first ":" only from the local part
-  const normalizedLocal = localPart.split(':')[0];
-
-  // Reattach domain if it exists
-  return domain ? `${normalizedLocal}@${domain}` : normalizedLocal;
-}
 
 /**
  * Load user registry from disk with caching
@@ -91,7 +76,7 @@ export function saveUserRegistry(registry: UserRegistry): void {
 
     logger.info('[user-registry] Registry saved successfully');
   } catch (error) {
-    logger.error('[user-registry] Failed to save registry:', error);
+    logger.error({ error }, '[user-registry] Failed to save registry');
     throw error;
   }
 }
