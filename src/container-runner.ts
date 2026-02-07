@@ -41,6 +41,7 @@ export interface ContainerInput {
   chatJid: string;
   isMain: boolean;
   isScheduledTask?: boolean;
+  effectiveTier?: ContextTier; // Effective tier from authorization logic (overrides group.contextTier)
 }
 
 export interface ContainerOutput {
@@ -70,6 +71,11 @@ function getSessionDirPath(groupFolder: string, tier: ContextTier): string {
       return path.join(DATA_DIR, 'sessions', 'family', '.claude');
     case 'friend':
       return path.join(DATA_DIR, 'sessions', 'friends', groupFolder, '.claude');
+    default: {
+      // Exhaustiveness check: if ContextTier enum is expanded, this will catch it at compile time
+      const _exhaustive: never = tier;
+      throw new Error(`Unknown context tier: ${String(_exhaustive)}`);
+    }
   }
 }
 
@@ -78,30 +84,44 @@ function getSessionDirPath(groupFolder: string, tier: ContextTier): string {
  * Throws error if invalid
  */
 function validateVaultMount(vaultPath: string, vaultName: string): void {
-  if (!fs.existsSync(vaultPath)) {
+  // Resolve to real path to avoid symlink-based bypasses of blocked patterns
+  let resolvedPath: string;
+  try {
+    resolvedPath = fs.realpathSync(vaultPath);
+  } catch (err: any) {
+    const code = (err && typeof err === 'object' && 'code' in err)
+      ? (err as NodeJS.ErrnoException).code
+      : undefined;
+    if (code === 'ENOENT') {
+      throw new Error(
+        `${vaultName} vault path does not exist: ${vaultPath}. ` +
+          `Please verify the path in data/vault-config.json or disable the vault.`,
+      );
+    }
     throw new Error(
-      `${vaultName} vault path does not exist: ${vaultPath}. ` +
-        `Please verify the path in data/vault-config.json or disable the vault.`,
+      `Failed to resolve real path for ${vaultName} vault path "${vaultPath}": ${
+        err instanceof Error ? err.message : String(err)
+      }`,
     );
   }
 
   // Check against blocked patterns to prevent mounting sensitive directories
   const blockedPatterns = ['.ssh', '.gnupg', '.gpg', '.aws', 'credentials'];
-  const lowerPath = vaultPath.toLowerCase();
+  const lowerPath = resolvedPath.toLowerCase();
   for (const pattern of blockedPatterns) {
     if (lowerPath.includes(pattern)) {
       throw new Error(
-        `${vaultName} vault path contains blocked pattern "${pattern}": ${vaultPath}. ` +
+        `${vaultName} vault path contains blocked pattern "${pattern}": ${vaultPath} (resolved to ${resolvedPath}). ` +
           `Vaults cannot be mounted from sensitive directories.`,
       );
     }
   }
 
-  // Ensure it's a directory
-  const stat = fs.statSync(vaultPath);
+  // Ensure the resolved path is a directory
+  const stat = fs.statSync(resolvedPath);
   if (!stat.isDirectory()) {
     throw new Error(
-      `${vaultName} vault path is not a directory: ${vaultPath}`,
+      `${vaultName} vault path is not a directory: ${vaultPath} (resolved to ${resolvedPath})`,
     );
   }
 }
@@ -109,13 +129,14 @@ function validateVaultMount(vaultPath: string, vaultName: string): void {
 function buildVolumeMounts(
   group: RegisteredGroup,
   isMain: boolean,
+  effectiveTier?: ContextTier,
 ): VolumeMount[] {
   const mounts: VolumeMount[] = [];
   const projectRoot = process.cwd();
 
-  // Determine context tier: use group's contextTier if set, otherwise fall back to isMain logic
-  // If no contextTier is set, assume 'owner' for main group, 'friend' for others (legacy behavior)
-  const contextTier: ContextTier = group.contextTier || (isMain ? 'owner' : 'friend');
+  // Determine context tier: use effectiveTier if provided (from authorization),
+  // otherwise fall back to group's contextTier, or isMain logic for legacy behavior
+  const contextTier: ContextTier = effectiveTier || group.contextTier || (isMain ? 'owner' : 'friend');
 
   logger.debug(
     {
@@ -364,7 +385,7 @@ export async function runContainerAgent(
   const groupDir = path.join(GROUPS_DIR, group.folder);
   fs.mkdirSync(groupDir, { recursive: true });
 
-  const mounts = buildVolumeMounts(group, input.isMain);
+  const mounts = buildVolumeMounts(group, input.isMain, input.effectiveTier);
   const containerArgs = buildContainerArgs(mounts);
 
   logger.debug(
