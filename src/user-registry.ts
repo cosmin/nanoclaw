@@ -1,15 +1,25 @@
 import path from 'path';
+import fs from 'fs';
 import { UserRegistry, UserInfo, UserTier } from './types.js';
-import { loadJson, saveJson } from './utils.js';
+import { loadJson } from './utils.js';
 import { DATA_DIR } from './config.js';
+import { logger } from './logger.js';
 
 const USER_REGISTRY_PATH = path.join(DATA_DIR, 'users.json');
 
 /**
- * Normalize JID by removing :lid suffix if present
+ * Normalize JID by removing LID-style suffix (e.g. ":1") from the local part,
+ * while preserving the domain (if any).
  */
 function normalizeJid(jid: string): string {
-  return jid.split(':')[0];
+  // Split into local part and domain (if present)
+  const [localPart, domain] = jid.split('@', 2);
+
+  // Remove any suffix after the first ":" only from the local part
+  const normalizedLocal = localPart.split(':')[0];
+
+  // Reattach domain if it exists
+  return domain ? `${normalizedLocal}@${domain}` : normalizedLocal;
 }
 
 /**
@@ -30,16 +40,58 @@ export function loadUserRegistry(): UserRegistry {
 }
 
 /**
- * Save user registry to disk
+ * Save user registry to disk atomically (using temp file + rename)
  */
 export function saveUserRegistry(registry: UserRegistry): void {
   try {
-    saveJson(USER_REGISTRY_PATH, registry);
-    console.log('[user-registry] Registry saved successfully');
+    const tmpPath = `${USER_REGISTRY_PATH}.tmp`;
+    const content = JSON.stringify(registry, null, 2);
+
+    // Ensure directory exists
+    fs.mkdirSync(path.dirname(USER_REGISTRY_PATH), { recursive: true });
+
+    // Write to temp file first
+    fs.writeFileSync(tmpPath, content, 'utf-8');
+
+    // Atomic rename
+    fs.renameSync(tmpPath, USER_REGISTRY_PATH);
+
+    logger.info('[user-registry] Registry saved successfully');
   } catch (error) {
-    console.error('[user-registry] Failed to save registry:', error);
+    logger.error('[user-registry] Failed to save registry:', error);
     throw error;
   }
+}
+
+/**
+ * Get tier for a user from a given registry. Returns 'stranger' if not found.
+ */
+function getUserTierFromRegistry(
+  normalizedJid: string,
+  registry: UserRegistry,
+): UserTier {
+  // Check if owner
+  if (
+    registry.owner.jid &&
+    normalizeJid(registry.owner.jid) === normalizedJid
+  ) {
+    return 'owner';
+  }
+
+  // Check if family
+  if (registry.family.some((user) => normalizeJid(user.jid) === normalizedJid)) {
+    return 'family';
+  }
+
+  // Check if friend
+  if (
+    registry.friends.some((user) => normalizeJid(user.jid) === normalizedJid)
+  ) {
+    return 'friend';
+  }
+
+  // Default to stranger
+  return 'stranger';
 }
 
 /**
@@ -48,24 +100,7 @@ export function saveUserRegistry(registry: UserRegistry): void {
 export function getUserTier(jid: string): UserTier {
   const normalizedJid = normalizeJid(jid);
   const registry = loadUserRegistry();
-
-  // Check if owner
-  if (registry.owner.jid && normalizeJid(registry.owner.jid) === normalizedJid) {
-    return 'owner';
-  }
-
-  // Check if family
-  if (registry.family.some(user => normalizeJid(user.jid) === normalizedJid)) {
-    return 'family';
-  }
-
-  // Check if friend
-  if (registry.friends.some(user => normalizeJid(user.jid) === normalizedJid)) {
-    return 'friend';
-  }
-
-  // Default to stranger
-  return 'stranger';
+  return getUserTierFromRegistry(normalizedJid, registry);
 }
 
 /**
@@ -87,7 +122,7 @@ export function initializeOwner(jid: string, name: string): void {
   };
 
   saveUserRegistry(registry);
-  console.log(`[user-registry] Owner initialized: ${name} (${normalizedJid})`);
+  logger.info(`[user-registry] Owner initialized: ${name} (${normalizedJid})`);
 }
 
 /**
@@ -103,10 +138,12 @@ export function addUser(
   const normalizedJid = normalizeJid(jid);
   const registry = loadUserRegistry();
 
-  // Check if user already exists in any tier
-  const currentTier = getUserTier(normalizedJid);
+  // Check if user already exists in any tier (using the already-loaded registry)
+  const currentTier = getUserTierFromRegistry(normalizedJid, registry);
   if (currentTier !== 'stranger') {
-    console.log(`[user-registry] User ${normalizedJid} already exists as ${currentTier}`);
+    logger.info(
+      `[user-registry] User ${normalizedJid} already exists as ${currentTier}`,
+    );
     return false;
   }
 
@@ -124,7 +161,7 @@ export function addUser(
   }
 
   saveUserRegistry(registry);
-  console.log(`[user-registry] Added ${name} (${normalizedJid}) as ${tier}`);
+  logger.info(`[user-registry] Added ${name} (${normalizedJid}) as ${tier}`);
   return true;
 }
 
@@ -149,7 +186,7 @@ export function removeUser(jid: string): boolean {
   if (familyIndex !== -1) {
     registry.family.splice(familyIndex, 1);
     saveUserRegistry(registry);
-    console.log(`[user-registry] Removed user ${normalizedJid} from family`);
+    logger.info(`[user-registry] Removed user ${normalizedJid} from family`);
     return true;
   }
 
@@ -160,11 +197,11 @@ export function removeUser(jid: string): boolean {
   if (friendIndex !== -1) {
     registry.friends.splice(friendIndex, 1);
     saveUserRegistry(registry);
-    console.log(`[user-registry] Removed user ${normalizedJid} from friends`);
+    logger.info(`[user-registry] Removed user ${normalizedJid} from friends`);
     return true;
   }
 
-  console.log(`[user-registry] User ${normalizedJid} not found in registry`);
+  logger.info(`[user-registry] User ${normalizedJid} not found in registry`);
   return false;
 }
 
