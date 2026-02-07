@@ -3,21 +3,7 @@ import { logger } from './logger.js';
 import { hasStrangers } from './authorization.js';
 import { updateGroupParticipants } from './db.js';
 import { loadUserRegistry, getUserTier } from './user-registry.js';
-
-/**
- * Normalize JID by removing LID-style suffix (e.g. ":1") from the local part,
- * while preserving the domain (if any).
- */
-function normalizeJid(jid: string): string {
-  // Split into local part and domain (if present)
-  const [localPart, domain] = jid.split('@', 2);
-
-  // Remove any suffix after the first ":" only from the local part
-  const normalizedLocal = localPart.split(':')[0];
-
-  // Reattach domain if it exists
-  return domain ? `${normalizedLocal}@${domain}` : normalizedLocal;
-}
+import { normalizeJid } from './utils.js';
 
 /**
  * Detect strangers in a group by fetching WhatsApp metadata
@@ -73,7 +59,7 @@ export async function detectStrangersInGroup(
     logger.error(
       {
         groupJid,
-        error: error instanceof Error ? error.message : String(error),
+        err: error,
       },
       '[stranger-detection] Failed to fetch group metadata',
     );
@@ -96,19 +82,25 @@ export async function syncGroupParticipants(
   groupJid: string,
 ): Promise<void> {
   try {
-    // Fetch group metadata from WhatsApp
+    // Fetch group metadata from WhatsApp using the raw group JID
     const metadata = await sock.groupMetadata(groupJid);
 
-    // Extract participant JIDs
+    // Extract raw participant JIDs from metadata
     const participantJids = metadata.participants.map((p) => p.id);
 
-    // Update database with current participants
-    updateGroupParticipants(groupJid, participantJids);
+    // Normalize group JID and participant JIDs before updating the database
+    const normalizedGroupJid = normalizeJid(groupJid);
+    const normalizedParticipantJids = Array.from(
+      new Set(participantJids.map((jid) => normalizeJid(jid))),
+    );
+
+    // Update database with current (normalized) participants
+    updateGroupParticipants(normalizedGroupJid, normalizedParticipantJids);
 
     logger.info(
       {
-        groupJid,
-        participantCount: participantJids.length,
+        groupJid: normalizedGroupJid,
+        participantCount: normalizedParticipantJids.length,
       },
       '[stranger-detection] Synced group participants to database',
     );
@@ -116,7 +108,7 @@ export async function syncGroupParticipants(
     logger.error(
       {
         groupJid,
-        error: error instanceof Error ? error.message : String(error),
+        err: error,
       },
       '[stranger-detection] Failed to sync group participants',
     );
@@ -184,7 +176,7 @@ export function shouldIgnoreThread(
  * @param groupJid - JID of the group with strangers
  * @param strangers - Array of stranger JIDs
  */
-export async function notifyOwnerOfStranger(
+export async function notifyOwnerOfStrangers(
   sock: WASocket,
   groupJid: string,
   strangers: string[],
@@ -247,7 +239,7 @@ All messages in this group will be ignored until strangers are removed or added 
     logger.error(
       {
         groupJid,
-        error: error instanceof Error ? error.message : String(error),
+        err: error,
       },
       '[stranger-detection] Failed to notify owner',
     );
