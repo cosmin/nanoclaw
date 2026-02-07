@@ -29,10 +29,18 @@ const strangerCache = new Map<string, StrangerCacheEntry>();
 const CACHE_TTL = 300000;
 
 /**
- * Normalize JID by removing :lid suffix if present
+ * Normalize JID by removing LID-style suffix (e.g. ":1") from the local part,
+ * while preserving the domain (if any).
  */
 function normalizeJid(jid: string): string {
-  return jid.split(':')[0];
+  // Split into local part and domain (if present)
+  const [localPart, domain] = jid.split('@', 2);
+
+  // Remove any suffix after the first ":" only from the local part
+  const normalizedLocal = localPart.split(':')[0];
+
+  // Reattach domain if it exists
+  return domain ? `${normalizedLocal}@${domain}` : normalizedLocal;
 }
 
 /**
@@ -151,6 +159,7 @@ export function hasStrangers(
 /**
  * Determine which agent context tier to use
  * Considers both sender tier and group's explicit context tier
+ * SECURITY: Always constrains by sender tier to prevent privilege escalation
  *
  * @param senderTier - Tier of the message sender
  * @param groupContextTier - Explicit context tier configured for group (optional)
@@ -160,40 +169,51 @@ export function determineAgentContext(
   senderTier: UserTier,
   groupContextTier?: ContextTier,
 ): ContextTier {
-  // If group has explicit context tier configured, use it
+  // Infer baseline context from sender tier
+  // Strangers default to friend context (most restrictive)
+  let inferredContextTier: ContextTier;
+  if (senderTier === 'owner') {
+    inferredContextTier = 'owner';
+  } else if (senderTier === 'family') {
+    inferredContextTier = 'family';
+  } else {
+    // friend or stranger -> friend context
+    inferredContextTier = 'friend';
+  }
+
+  // If group has explicit context tier configured, constrain it by sender's allowed context
+  // A lower-tier sender cannot be elevated to a higher-privilege context
   if (groupContextTier) {
+    const contextPriority: ContextTier[] = ['owner', 'family', 'friend'];
+
+    const senderIndex = contextPriority.indexOf(inferredContextTier);
+    const groupIndex = contextPriority.indexOf(groupContextTier);
+    // Use the most restrictive (highest index) of the two
+    const effectiveIndex = Math.max(senderIndex, groupIndex);
+    const effectiveContextTier = contextPriority[effectiveIndex];
+
     logger.info(
       {
         senderTier,
+        inferredFromSender: inferredContextTier,
         groupContextTier,
-        result: groupContextTier,
+        result: effectiveContextTier,
       },
-      '[authorization] Using explicit group context tier',
+      '[authorization] Using group context tier with sender constraints',
     );
-    return groupContextTier;
-  }
 
-  // Otherwise infer from sender tier
-  // Strangers default to friend context (most restrictive)
-  let contextTier: ContextTier;
-  if (senderTier === 'owner') {
-    contextTier = 'owner';
-  } else if (senderTier === 'family') {
-    contextTier = 'family';
-  } else {
-    // friend or stranger -> friend context
-    contextTier = 'friend';
+    return effectiveContextTier;
   }
 
   logger.info(
     {
       senderTier,
-      contextTier,
+      contextTier: inferredContextTier,
     },
     '[authorization] Context tier inferred from sender',
   );
 
-  return contextTier;
+  return inferredContextTier;
 }
 
 /**
