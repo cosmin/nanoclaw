@@ -77,6 +77,74 @@ export function initDatabase(): void {
   } catch {
     /* column already exists */
   }
+
+  // Add sender_tier column to messages table (Phase 1: User Authorization System)
+  try {
+    db.exec(`ALTER TABLE messages ADD COLUMN sender_tier TEXT`);
+  } catch {
+    /* column already exists */
+  }
+
+  // Create group_participants table (Phase 1: Stranger detection)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS group_participants (
+      group_jid TEXT NOT NULL,
+      user_jid TEXT NOT NULL,
+      joined_at TEXT NOT NULL,
+      is_active INTEGER DEFAULT 1,
+      PRIMARY KEY (group_jid, user_jid)
+    );
+    CREATE INDEX IF NOT EXISTS idx_group_participants_group
+      ON group_participants(group_jid);
+    CREATE INDEX IF NOT EXISTS idx_group_participants_user
+      ON group_participants(user_jid);
+  `);
+
+  // Create stranger_detection_cache table (Phase 1: Performance optimization)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS stranger_detection_cache (
+      group_jid TEXT PRIMARY KEY,
+      has_strangers INTEGER NOT NULL,
+      last_checked TEXT NOT NULL,
+      participant_snapshot TEXT NOT NULL
+    );
+  `);
+
+  // Create email_messages table (Phase 1: Email integration)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS email_messages (
+      message_id TEXT PRIMARY KEY,
+      thread_id TEXT NOT NULL,
+      from_address TEXT NOT NULL,
+      to_address TEXT NOT NULL,
+      subject TEXT,
+      body TEXT,
+      received_at TEXT NOT NULL,
+      processed_at TEXT,
+      user_tier TEXT,
+      session_key TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_email_thread
+      ON email_messages(thread_id);
+    CREATE INDEX IF NOT EXISTS idx_email_received
+      ON email_messages(received_at);
+  `);
+
+  // Create email_sent table (Phase 1: Email integration)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS email_sent (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      in_reply_to TEXT,
+      thread_id TEXT,
+      to_address TEXT NOT NULL,
+      subject TEXT NOT NULL,
+      body TEXT NOT NULL,
+      sent_at TEXT NOT NULL,
+      smtp_message_id TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_email_sent_thread
+      ON email_sent(thread_id);
+  `);
 }
 
 /**
@@ -393,4 +461,103 @@ export function getTaskRunLogs(taskId: string, limit = 10): TaskRunLog[] {
   `,
     )
     .all(taskId, limit) as TaskRunLog[];
+}
+
+/**
+ * Update group participants in the database.
+ * Marks existing participants as inactive and inserts/activates current participants.
+ */
+export function updateGroupParticipants(
+  groupJid: string,
+  participants: string[],
+): void {
+  const now = new Date().toISOString();
+
+  // Mark all existing participants as inactive
+  db.prepare(
+    `UPDATE group_participants SET is_active = 0 WHERE group_jid = ?`,
+  ).run(groupJid);
+
+  // Insert or reactivate each participant
+  const stmt = db.prepare(`
+    INSERT INTO group_participants (group_jid, user_jid, joined_at, is_active)
+    VALUES (?, ?, ?, 1)
+    ON CONFLICT(group_jid, user_jid) DO UPDATE SET is_active = 1
+  `);
+
+  for (const participant of participants) {
+    stmt.run(groupJid, participant, now);
+  }
+}
+
+/**
+ * Get all active participants for a group.
+ */
+export function getGroupParticipants(groupJid: string): string[] {
+  const rows = db
+    .prepare(
+      `
+    SELECT user_jid
+    FROM group_participants
+    WHERE group_jid = ? AND is_active = 1
+  `,
+    )
+    .all(groupJid) as { user_jid: string }[];
+
+  return rows.map((row) => row.user_jid);
+}
+
+/**
+ * Get stranger detection cache for a group.
+ */
+export function getStrangerCache(groupJid: string): {
+  has_strangers: number;
+  last_checked: string;
+  participant_snapshot: string;
+} | null {
+  const row = db
+    .prepare(
+      `
+    SELECT has_strangers, last_checked, participant_snapshot
+    FROM stranger_detection_cache
+    WHERE group_jid = ?
+  `,
+    )
+    .get(groupJid) as
+    | {
+        has_strangers: number;
+        last_checked: string;
+        participant_snapshot: string;
+      }
+    | undefined;
+
+  return row || null;
+}
+
+/**
+ * Set stranger detection cache for a group.
+ */
+export function setStrangerCache(
+  groupJid: string,
+  hasStrangers: boolean,
+  participants: string[],
+): void {
+  const now = new Date().toISOString();
+  const snapshot = JSON.stringify(participants.sort());
+
+  db.prepare(
+    `
+    INSERT OR REPLACE INTO stranger_detection_cache (group_jid, has_strangers, last_checked, participant_snapshot)
+    VALUES (?, ?, ?, ?)
+  `,
+  ).run(groupJid, hasStrangers ? 1 : 0, now, snapshot);
+}
+
+/**
+ * Clear stranger detection cache for a specific group.
+ */
+export function clearStrangerCacheForGroup(groupJid: string): void {
+  db.prepare(`DELETE FROM stranger_detection_cache WHERE group_jid = ?`).run(
+    groupJid,
+  );
 }
