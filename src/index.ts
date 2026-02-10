@@ -62,7 +62,7 @@ let lastTimestamp = '';
 let sessions: Record<string, string> = {};
 let registeredGroups: Record<string, RegisteredGroup> = {};
 let lastAgentTimestamp: Record<string, string> = {};
-// LID to phone number mapping (WhatsApp now sends LID JIDs for self-chats)
+// LID to phone number mapping loaded from Baileys auth state
 let lidToPhoneMap: Record<string, string> = {};
 // Guards to prevent duplicate loops on WhatsApp reconnect
 let messageLoopRunning = false;
@@ -75,7 +75,37 @@ const outgoingQueue: Array<{ jid: string; text: string }> = [];
 const queue = new GroupQueue();
 
 /**
+ * Load all LID→phone mappings from Baileys auth state files.
+ * Baileys stores reverse mappings as `lid-mapping-{lidUser}_reverse.json` → phoneUser.
+ */
+function loadLidMappings(): void {
+  const authDir = path.join(STORE_DIR, 'auth');
+  try {
+    const files = fs.readdirSync(authDir);
+    let count = 0;
+    for (const file of files) {
+      const match = file.match(/^lid-mapping-(\d+)_reverse\.json$/);
+      if (!match) continue;
+      const lidUser = match[1];
+      const content = fs.readFileSync(path.join(authDir, file), 'utf-8');
+      const phoneUser = JSON.parse(content);
+      if (typeof phoneUser === 'string') {
+        lidToPhoneMap[lidUser] = `${phoneUser}@s.whatsapp.net`;
+        count++;
+      }
+    }
+    if (count > 0) {
+      logger.info({ count }, 'Loaded LID-to-phone mappings from auth state');
+    }
+  } catch (err) {
+    logger.debug({ err }, 'Could not load LID mappings (auth state may not exist yet)');
+  }
+}
+
+/**
  * Translate a JID from LID format to phone format if we have a mapping.
+ * WhatsApp now uses LID JIDs (e.g., 59790273302580@lid) instead of phone JIDs
+ * for DMs. This function maps them back to phone JIDs using Baileys auth state.
  * Returns the original JID if no mapping exists.
  */
 function translateJid(jid: string): string {
@@ -227,7 +257,6 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
   const missedMessages = getMessagesSince(
     chatJid,
     sinceTimestamp,
-    ASSISTANT_NAME,
   );
 
   if (missedMessages.length === 0) return true;
@@ -276,7 +305,7 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
       const text = raw.replace(/<internal>[\s\S]*?<\/internal>/g, '').trim();
       logger.info({ group: group.name }, `Agent output: ${raw.slice(0, 200)}`);
       if (text) {
-        await sendMessage(chatJid, `${ASSISTANT_NAME}: ${text}`);
+        await sendMessage(chatJid, text);
       }
       // Only reset idle timer on actual results, not session-update markers (result: null)
       resetIdleTimer();
@@ -462,7 +491,7 @@ function startIpcWatcher(): void {
                 ) {
                   await sendMessage(
                     data.chatJid,
-                    `${ASSISTANT_NAME}: ${data.text}`,
+                    data.text,
                   );
                   logger.info(
                     { chatJid: data.chatJid, sourceGroup },
@@ -811,13 +840,14 @@ async function connectWhatsApp(): Promise<void> {
       waConnected = true;
       logger.info('Connected to WhatsApp');
 
-      // Build LID to phone mapping from auth state for self-chat translation
+      // Build LID to phone mapping from auth state files for DM JID translation
+      loadLidMappings();
       if (sock.user) {
         const phoneUser = sock.user.id.split(':')[0];
         const lidUser = sock.user.lid?.split(':')[0];
         if (lidUser && phoneUser) {
           lidToPhoneMap[lidUser] = `${phoneUser}@s.whatsapp.net`;
-          logger.debug({ lidUser, phoneUser }, 'LID to phone mapping set');
+          logger.debug({ lidUser, phoneUser }, 'LID to phone mapping set from sock.user');
         }
       }
 
@@ -862,6 +892,10 @@ async function connectWhatsApp(): Promise<void> {
       const rawJid = msg.key.remoteJid;
       if (!rawJid || rawJid === 'status@broadcast') continue;
 
+      // Skip bot's own outgoing messages — Jarvis has a dedicated phone number,
+      // so fromMe messages are always the bot's own responses. Don't store them.
+      if (msg.key.fromMe) continue;
+
       // Translate LID JID to phone JID if applicable
       const chatJid = translateJid(rawJid);
 
@@ -877,7 +911,6 @@ async function connectWhatsApp(): Promise<void> {
         storeMessage(
           msg,
           chatJid,
-          msg.key.fromMe || false,
           msg.pushName || undefined,
         );
       }
@@ -900,7 +933,6 @@ async function startMessageLoop(): Promise<void> {
       const { messages, newTimestamp } = getNewMessages(
         jids,
         lastTimestamp,
-        ASSISTANT_NAME,
       );
 
       if (messages.length > 0) {
@@ -943,7 +975,6 @@ async function startMessageLoop(): Promise<void> {
           const allPending = getMessagesSince(
             chatJid,
             lastAgentTimestamp[chatJid] || '',
-            ASSISTANT_NAME,
           );
           const messagesToSend =
             allPending.length > 0 ? allPending : groupMessages;
@@ -977,7 +1008,7 @@ async function startMessageLoop(): Promise<void> {
 function recoverPendingMessages(): void {
   for (const [chatJid, group] of Object.entries(registeredGroups)) {
     const sinceTimestamp = lastAgentTimestamp[chatJid] || '';
-    const pending = getMessagesSince(chatJid, sinceTimestamp, ASSISTANT_NAME);
+    const pending = getMessagesSince(chatJid, sinceTimestamp);
     if (pending.length > 0) {
       logger.info(
         { group: group.name, pendingCount: pending.length },

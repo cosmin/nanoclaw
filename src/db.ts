@@ -27,7 +27,6 @@ export function initDatabase(): void {
       sender_name TEXT,
       content TEXT,
       timestamp TEXT,
-      is_from_me INTEGER,
       PRIMARY KEY (id, chat_jid),
       FOREIGN KEY (chat_jid) REFERENCES chats(jid)
     );
@@ -202,11 +201,11 @@ export function setLastGroupSync(): void {
 /**
  * Store a message with full content.
  * Only call this for registered groups where message history is needed.
+ * Bot's own outgoing messages are never stored (filtered at the upsert handler).
  */
 export function storeMessage(
   msg: proto.IWebMessageInfo,
   chatJid: string,
-  isFromMe: boolean,
   pushName?: string,
 ): void {
   if (!msg.key) return;
@@ -224,7 +223,7 @@ export function storeMessage(
   const msgId = msg.key.id || '';
 
   db.prepare(
-    `INSERT OR REPLACE INTO messages (id, chat_jid, sender, sender_name, content, timestamp, is_from_me) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT OR REPLACE INTO messages (id, chat_jid, sender, sender_name, content, timestamp) VALUES (?, ?, ?, ?, ?, ?)`,
   ).run(
     msgId,
     chatJid,
@@ -232,29 +231,26 @@ export function storeMessage(
     senderName,
     content,
     timestamp,
-    isFromMe ? 1 : 0,
   );
 }
 
 export function getNewMessages(
   jids: string[],
   lastTimestamp: string,
-  botPrefix: string,
 ): { messages: NewMessage[]; newTimestamp: string } {
   if (jids.length === 0) return { messages: [], newTimestamp: lastTimestamp };
 
   const placeholders = jids.map(() => '?').join(',');
-  // Filter out bot's own messages by checking content prefix (not is_from_me, since user shares the account)
   const sql = `
     SELECT id, chat_jid, sender, sender_name, content, timestamp
     FROM messages
-    WHERE timestamp > ? AND chat_jid IN (${placeholders}) AND content NOT LIKE ?
+    WHERE timestamp > ? AND chat_jid IN (${placeholders})
     ORDER BY timestamp
   `;
 
   const rows = db
     .prepare(sql)
-    .all(lastTimestamp, ...jids, `${botPrefix}:%`) as NewMessage[];
+    .all(lastTimestamp, ...jids) as NewMessage[];
 
   let newTimestamp = lastTimestamp;
   for (const row of rows) {
@@ -267,18 +263,16 @@ export function getNewMessages(
 export function getMessagesSince(
   chatJid: string,
   sinceTimestamp: string,
-  botPrefix: string,
 ): NewMessage[] {
-  // Filter out bot's own messages by checking content prefix
   const sql = `
     SELECT id, chat_jid, sender, sender_name, content, timestamp
     FROM messages
-    WHERE chat_jid = ? AND timestamp > ? AND content NOT LIKE ?
+    WHERE chat_jid = ? AND timestamp > ?
     ORDER BY timestamp
   `;
   return db
     .prepare(sql)
-    .all(chatJid, sinceTimestamp, `${botPrefix}:%`) as NewMessage[];
+    .all(chatJid, sinceTimestamp) as NewMessage[];
 }
 
 export function createTask(
