@@ -37,6 +37,7 @@ export interface RegisteredGroup {
   folder: string;
   trigger: string;
   added_at: string;
+  contextTier?: ContextTier;
   containerConfig?: ContainerConfig;
   requiresTrigger?: boolean; // Default: true for groups, false for solo chats
 }
@@ -72,4 +73,33 @@ export interface TaskRunLog {
   status: 'success' | 'error';
   result: string | null;
   error: string | null;
+}
+
+// User Authorization Types
+export type UserTier = 'owner' | 'family' | 'friend' | 'stranger';
+export type ContextTier = 'owner' | 'family' | 'friend';
+
+export interface UserInfo {
+  jid: string;
+  name: string;
+  addedAt: string;
+  addedBy?: string;
+}
+
+export interface UserRegistry {
+  owner: UserInfo;
+  family: UserInfo[];
+  friend: UserInfo[];
+}
+
+// Authorization Types
+export interface AuthorizationResult {
+  canInvoke: boolean;
+  tier: UserTier;
+  reason?: string;
+}
+
+export interface GroupParticipant {
+  jid: string;
+  tier: UserTier;
 }

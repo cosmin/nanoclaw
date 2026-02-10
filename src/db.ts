@@ -109,6 +109,28 @@ export function initDatabase(): void {
 
   // Migrate from JSON files if they exist
   migrateJsonState();
+
+  // Authorization tables
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS group_participants (
+      group_jid TEXT NOT NULL,
+      user_jid TEXT NOT NULL,
+      joined_at TEXT NOT NULL,
+      is_active INTEGER DEFAULT 1,
+      PRIMARY KEY (group_jid, user_jid)
+    );
+    CREATE INDEX IF NOT EXISTS idx_group_participants_group
+      ON group_participants(group_jid);
+    CREATE INDEX IF NOT EXISTS idx_group_participants_user
+      ON group_participants(user_jid);
+
+    CREATE TABLE IF NOT EXISTS stranger_detection_cache (
+      group_jid TEXT PRIMARY KEY,
+      has_strangers INTEGER NOT NULL,
+      last_checked TEXT NOT NULL,
+      participant_snapshot TEXT NOT NULL
+    );
+  `);
 }
 
 /**
@@ -580,4 +602,83 @@ function migrateJsonState(): void {
       setRegisteredGroup(jid, group);
     }
   }
+}
+
+// --- Group participants (for stranger detection) ---
+
+export function updateGroupParticipants(
+  groupJid: string,
+  participants: string[],
+): void {
+  const now = new Date().toISOString();
+
+  const tx = db.transaction(
+    (txGroupJid: string, txParticipants: string[], txNow: string) => {
+      db.prepare(
+        `UPDATE group_participants SET is_active = 0 WHERE group_jid = ?`,
+      ).run(txGroupJid);
+
+      const stmt = db.prepare(`
+        INSERT INTO group_participants (group_jid, user_jid, joined_at, is_active)
+        VALUES (?, ?, ?, 1)
+        ON CONFLICT(group_jid, user_jid) DO UPDATE SET is_active = 1
+      `);
+
+      for (const participant of txParticipants) {
+        stmt.run(txGroupJid, participant, txNow);
+      }
+    },
+  );
+
+  tx(groupJid, participants, now);
+}
+
+export function getGroupParticipants(groupJid: string): string[] {
+  const rows = db
+    .prepare(
+      `SELECT user_jid FROM group_participants WHERE group_jid = ? AND is_active = 1`,
+    )
+    .all(groupJid) as { user_jid: string }[];
+
+  return rows.map((row) => row.user_jid);
+}
+
+export function getStrangerCache(groupJid: string): {
+  has_strangers: number;
+  last_checked: string;
+  participant_snapshot: string;
+} | null {
+  const row = db
+    .prepare(
+      `SELECT has_strangers, last_checked, participant_snapshot FROM stranger_detection_cache WHERE group_jid = ?`,
+    )
+    .get(groupJid) as
+    | {
+        has_strangers: number;
+        last_checked: string;
+        participant_snapshot: string;
+      }
+    | undefined;
+
+  return row || null;
+}
+
+export function setStrangerCache(
+  groupJid: string,
+  hasStrangers: boolean,
+  participants: string[],
+): void {
+  const now = new Date().toISOString();
+  const snapshot = JSON.stringify([...participants].sort());
+
+  db.prepare(
+    `INSERT OR REPLACE INTO stranger_detection_cache (group_jid, has_strangers, last_checked, participant_snapshot)
+     VALUES (?, ?, ?, ?)`,
+  ).run(groupJid, hasStrangers ? 1 : 0, now, snapshot);
+}
+
+export function clearStrangerCacheForGroup(groupJid: string): void {
+  db.prepare(`DELETE FROM stranger_detection_cache WHERE group_jid = ?`).run(
+    groupJid,
+  );
 }

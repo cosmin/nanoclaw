@@ -52,8 +52,14 @@ import {
 } from './db.js';
 import { GroupQueue } from './group-queue.js';
 import { startSchedulerLoop } from './task-scheduler.js';
-import { NewMessage, RegisteredGroup } from './types.js';
+import { ContextTier, NewMessage, RegisteredGroup } from './types.js';
 import { logger } from './logger.js';
+import { getUserTier } from './user-registry.js';
+import {
+  canInvoke,
+  hasStrangers,
+  determineAgentContext,
+} from './authorization.js';
 
 const GROUP_SYNC_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
@@ -269,6 +275,51 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
     if (!hasTrigger) return true;
   }
 
+  // --- Authorization checks ---
+  const isGroupChat = chatJid.endsWith('@g.us');
+
+  // For group chats, check for strangers using WhatsApp metadata
+  if (isGroupChat) {
+    try {
+      const metadata = await sock.groupMetadata(chatJid);
+      const participantJids = metadata.participants.map((p) => p.id);
+      if (hasStrangers(chatJid, participantJids)) {
+        logger.warn(
+          { group: group.name, chatJid },
+          'Group has strangers — ignoring all messages',
+        );
+        // Advance cursor so we don't re-check these messages
+        lastAgentTimestamp[chatJid] =
+          missedMessages[missedMessages.length - 1].timestamp;
+        saveState();
+        return true;
+      }
+    } catch (err) {
+      logger.error({ group: group.name, err }, 'Failed to fetch group metadata for stranger detection');
+    }
+  }
+
+  // Determine sender tiers and check invocation rights
+  // Find the trigger message sender (or last message sender for main/no-trigger)
+  const triggerMsg = missedMessages.find((m) => TRIGGER_PATTERN.test(m.content.trim()))
+    || missedMessages[missedMessages.length - 1];
+  const authResult = canInvoke(triggerMsg.sender, isGroupChat);
+
+  if (!authResult.canInvoke) {
+    logger.info(
+      { group: group.name, sender: triggerMsg.sender, tier: authResult.tier, reason: authResult.reason },
+      'Message sender not authorized to invoke Jarvis',
+    );
+    // Advance cursor so we don't re-check these messages
+    lastAgentTimestamp[chatJid] =
+      missedMessages[missedMessages.length - 1].timestamp;
+    saveState();
+    return true;
+  }
+
+  // Determine effective tier for this invocation
+  const effectiveTier: ContextTier = determineAgentContext(authResult.tier, group.contextTier);
+
   const prompt = formatMessages(missedMessages);
 
   // Advance cursor so the piping path in startMessageLoop won't re-fetch
@@ -279,7 +330,7 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
   saveState();
 
   logger.info(
-    { group: group.name, messageCount: missedMessages.length },
+    { group: group.name, messageCount: missedMessages.length, effectiveTier },
     'Processing messages',
   );
 
@@ -297,7 +348,7 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
   await setTyping(chatJid, true);
   let hadError = false;
 
-  const output = await runAgent(group, prompt, chatJid, async (result) => {
+  const output = await runAgent(group, prompt, chatJid, effectiveTier, async (result) => {
     // Streaming output callback — called for each agent result
     if (result.result) {
       const raw = typeof result.result === 'string' ? result.result : JSON.stringify(result.result);
@@ -334,6 +385,7 @@ async function runAgent(
   group: RegisteredGroup,
   prompt: string,
   chatJid: string,
+  effectiveTier?: ContextTier,
   onOutput?: (output: ContainerOutput) => Promise<void>,
 ): Promise<'success' | 'error'> {
   const isMain = group.folder === MAIN_GROUP_FOLDER;
@@ -384,6 +436,7 @@ async function runAgent(
         groupFolder: group.folder,
         chatJid,
         isMain,
+        effectiveTier,
       },
       (proc, containerName) => queue.registerProcess(chatJid, proc, containerName, group.folder),
       wrappedOnOutput,
