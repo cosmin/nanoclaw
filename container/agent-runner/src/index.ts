@@ -65,7 +65,7 @@ const IPC_INPUT_DIR = '/workspace/ipc/input';
 const IPC_INPUT_CLOSE_SENTINEL = path.join(IPC_INPUT_DIR, '_close');
 const IPC_POLL_MS = 500;
 
-const HA_MCP_PORT = 8086;
+const HA_MCP_PORT = 8086; // Must match ha-mcp launchd plist port
 const HA_CALL_SERVICE_TOOL = 'mcp__home-assistant__ha_call_service';
 
 /**
@@ -88,12 +88,23 @@ function getHaMcpUrl(): string {
 /**
  * PostToolUse hook that captures Home Assistant service call actions.
  * Allows NanoClaw to return structured HA actions alongside text responses.
+ *
+ * Only fires on successful tool execution (SDK-level failures go to
+ * PostToolUseFailure instead). We additionally check MCP-level errors
+ * via tool_response.isError — ha-mcp returns isError:true for things
+ * like entity-not-found or HA offline.
  */
 function createActionCaptureHook(capturedActions: HaAction[]): HookCallback {
   return async (input, _toolUseId, _context) => {
     if (input.hook_event_name !== 'PostToolUse') return {};
     const postToolInput = input as PostToolUseHookInput;
     if (postToolInput.tool_name === HA_CALL_SERVICE_TOOL) {
+      // Skip MCP-level errors (entity not found, HA offline, permission denied)
+      const response = postToolInput.tool_response as { isError?: boolean } | undefined;
+      if (response?.isError) {
+        log(`Skipping failed HA action (MCP error): ${(postToolInput.tool_input as Record<string, unknown>).entity_id}`);
+        return {};
+      }
       const params = postToolInput.tool_input as Record<string, unknown>;
       capturedActions.push({
         entity_id: String(params.entity_id || ''),
@@ -490,6 +501,8 @@ async function runQuery(
       resultCount++;
       const textResult = 'result' in message ? (message as { result?: string }).result : null;
       log(`Result #${resultCount}: subtype=${message.subtype}${textResult ? ` text=${textResult.slice(0, 200)}` : ''}`);
+      // Actions are cumulative — each result carries all actions captured since query start.
+      // Consumer should use the last result's actions array for the complete list.
       writeOutput({
         status: 'success',
         result: textResult || null,
