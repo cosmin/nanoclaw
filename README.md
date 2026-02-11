@@ -1,28 +1,24 @@
 <p align="center">
-  <img src="assets/nanoclaw-logo.png" alt="NanoClaw" width="400">
+  <img src="assets/microclaw-logo.png" alt="MicroClaw" width="400">
 </p>
 
 <p align="center">
-  My personal Claude assistant that runs securely in containers. Lightweight and built to be understood and customized for your own needs.
+  Personal Claude assistant with Home Assistant integration, voice control, and HTTP API — all running securely in containers.
 </p>
 
-<p align="center">
-  <a href="https://discord.gg/VGWXrf8x"><img src="https://img.shields.io/discord/1470188214710046894?label=Discord&logo=discord&v=2" alt="Discord"></a>
-</p>
+## What is MicroClaw?
 
-**New:** First AI assistant to support [Agent Swarms](https://code.claude.com/docs/en/agent-teams). Spin up teams of agents that collaborate in your chat.
+MicroClaw is forked from [NanoClaw](https://github.com/qwibitai/nanoclaw) and expanded with additional integrations while keeping the same sandboxed philosophy. Where NanoClaw provides a minimal WhatsApp-to-Claude bridge, MicroClaw adds Home Assistant control, voice integration, an HTTP API, and a dedicated phone number architecture — all without abandoning the principle that you should be able to read and understand every line of code that has access to your life.
 
-## Why I Built This
+Compared to [OpenClaw](https://github.com/openclaw/openclaw)'s batteries-included approach (52+ modules, 15 channel provider abstractions, application-level security), MicroClaw stays small and comprehensible. Agents run in actual Linux containers with filesystem isolation, not behind permission checks.
 
-[OpenClaw](https://github.com/openclaw/openclaw) is an impressive project with a great vision. But I can't sleep well running software I don't understand with access to my life. OpenClaw has 52+ modules, 8 config management files, 45+ dependencies, and abstractions for 15 channel providers. Security is application-level (allowlists, pairing codes) rather than OS isolation. Everything runs in one Node process with shared memory.
-
-NanoClaw gives you the same core functionality in a codebase you can understand in 8 minutes. One process. A handful of files. Agents run in actual Linux containers with filesystem isolation, not behind permission checks.
+We track upstream NanoClaw changes in [UPSTREAM.md](UPSTREAM.md) — each upstream PR and commit is evaluated and linked to a GitHub issue with a recommendation (adopt, adapt, or skip). This lets us cherry-pick useful fixes and features without re-merging a diverging codebase.
 
 ## Quick Start
 
 ```bash
-git clone https://github.com/gavrielc/nanoclaw.git
-cd nanoclaw
+git clone https://github.com/cosmin/microclaw.git
+cd microclaw
 claude
 ```
 
@@ -46,14 +42,15 @@ Then run `/setup`. Claude Code handles everything: dependencies, authentication,
 
 ## What It Supports
 
-- **WhatsApp I/O** - Message Claude from your phone
-- **Isolated group context** - Each group has its own `CLAUDE.md` memory, isolated filesystem, and runs in its own container sandbox with only that filesystem mounted
-- **Main channel** - Your private admin control channel; every other group is completely isolated
+- **WhatsApp I/O** - Message Claude from a dedicated phone number
+- **Home Assistant** - Control smart home devices, TTS announcements, sensor queries via [ha-mcp](https://github.com/bendews/ha-mcp-web)
+- **Voice control** - ESP32-based voice plugin with fast path (~200ms) for learned actions and full agent reasoning for everything else
+- **HTTP API** - External integrations via `POST /api/message` with structured responses including captured HA actions
+- **Isolated group context** - Each group has its own `CLAUDE.md` memory, isolated filesystem, and container sandbox
 - **Scheduled tasks** - Recurring jobs that run Claude and can message you back
-- **Web access** - Search and fetch content
 - **Container isolation** - Agents sandboxed in Apple Container (macOS) or Docker (macOS/Linux)
-- **Agent Swarms** - Spin up teams of specialized agents that collaborate on complex tasks (first personal AI assistant to support this)
-- **Optional integrations** - Add Gmail (`/add-gmail`) and more via skills
+- **Agent Swarms** - Teams of specialized agents that collaborate on complex tasks
+- **Optional integrations** - Telegram (`/add-telegram`), Gmail (`/add-gmail`), X (`/x-integration`), and more via skills
 
 ## Usage
 
@@ -89,7 +86,7 @@ The codebase is small enough that Claude can safely modify it.
 
 **Don't add features. Add skills.**
 
-If you want to add Telegram support, don't create a PR that adds Telegram alongside WhatsApp. Instead, contribute a skill file (`.claude/skills/add-telegram/SKILL.md`) that teaches Claude Code how to transform a NanoClaw installation to use Telegram.
+If you want to add Telegram support, don't create a PR that adds Telegram alongside WhatsApp. Instead, contribute a skill file (`.claude/skills/add-telegram/SKILL.md`) that teaches Claude Code how to transform a MicroClaw installation to use Telegram.
 
 Users then run `/add-telegram` on their fork and get clean code that does exactly what they need, not a bloated system trying to support every use case.
 
@@ -168,10 +165,6 @@ Security fixes, bug fixes, and clear improvements to the base configuration. Tha
 Everything else (new capabilities, OS compatibility, hardware support, enhancements) should be contributed as skills.
 
 This keeps the base system minimal and lets every user customize their installation without inheriting features they don't want.
-
-## Community
-
-Questions? Ideas? [Join the Discord](https://discord.gg/VGWXrf8x).
 
 ## License
 

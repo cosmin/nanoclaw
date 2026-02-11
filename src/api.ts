@@ -1,5 +1,5 @@
 /**
- * Lightweight HTTP API for NanoClaw.
+ * Lightweight HTTP API for MicroClaw.
  * External systems (voice plugin, webhooks, etc.) submit messages here
  * and receive structured responses (text + actions).
  */
@@ -40,8 +40,8 @@ function loadApiToken(): string | null {
     const content = fs.readFileSync(ENV_FILE_PATH, 'utf-8');
     for (const line of content.split('\n')) {
       const trimmed = line.trim();
-      if (trimmed.startsWith('NANOCLAW_API_TOKEN=')) {
-        return trimmed.slice('NANOCLAW_API_TOKEN='.length).trim();
+      if (trimmed.startsWith('MICROCLAW_API_TOKEN=')) {
+        return trimmed.slice('MICROCLAW_API_TOKEN='.length).trim();
       }
     }
   } catch {
@@ -81,7 +81,7 @@ export function startApiServer(processMessage: ProcessMessageFn): void {
   const apiToken = loadApiToken();
   if (!apiToken) {
     logger.warn(
-      'NANOCLAW_API_TOKEN not set in env file — API requests will be rejected',
+      'MICROCLAW_API_TOKEN not set in env file — API requests will be rejected',
     );
   }
 

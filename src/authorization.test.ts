@@ -12,8 +12,8 @@ vi.mock('./logger.js', () => ({
 
 // Mock config before importing modules that use it
 vi.mock('./config.js', () => ({
-  DATA_DIR: '/tmp/nanoclaw-test-data',
-  MOUNT_ALLOWLIST_PATH: '/tmp/nanoclaw-test-allowlist.json',
+  DATA_DIR: '/tmp/microclaw-test-data',
+  MOUNT_ALLOWLIST_PATH: '/tmp/microclaw-test-allowlist.json',
 }));
 
 // Mock fs to control user registry loading

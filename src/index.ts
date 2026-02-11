@@ -941,7 +941,7 @@ async function connectWhatsApp(): Promise<void> {
     },
     printQRInTerminal: false,
     logger,
-    browser: ['NanoClaw', 'Chrome', '1.0.0'],
+    browser: ['MicroClaw', 'Chrome', '1.0.0'],
   });
 
   sock.ev.on('connection.update', (update) => {
@@ -952,7 +952,7 @@ async function connectWhatsApp(): Promise<void> {
         'WhatsApp authentication required. Run /setup in Claude Code.';
       logger.error(msg);
       exec(
-        `osascript -e 'display notification "${msg}" with title "NanoClaw" sound name "Basso"'`,
+        `osascript -e 'display notification "${msg}" with title "MicroClaw" sound name "Basso"'`,
       );
       setTimeout(() => process.exit(1), 1000);
     }
@@ -1071,7 +1071,7 @@ async function startMessageLoop(): Promise<void> {
   }
   messageLoopRunning = true;
 
-  logger.info(`NanoClaw running (trigger: @${ASSISTANT_NAME})`);
+  logger.info(`MicroClaw running (trigger: @${ASSISTANT_NAME})`);
 
   while (true) {
     try {
@@ -1195,7 +1195,7 @@ function ensureContainerSystemRunning(): void {
         '║  2. Run: container system start                               ║',
       );
       console.error(
-        '║  3. Restart NanoClaw                                          ║',
+        '║  3. Restart MicroClaw                                          ║',
       );
       console.error(
         '╚════════════════════════════════════════════════════════════════╝\n',
@@ -1204,7 +1204,7 @@ function ensureContainerSystemRunning(): void {
     }
   }
 
-  // Kill and clean up orphaned NanoClaw containers from previous runs
+  // Kill and clean up orphaned MicroClaw containers from previous runs
   try {
     const output = execSync('container ls --format json', {
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -1212,7 +1212,7 @@ function ensureContainerSystemRunning(): void {
     });
     const containers: { status: string; configuration: { id: string } }[] = JSON.parse(output || '[]');
     const orphans = containers
-      .filter((c) => c.status === 'running' && c.configuration.id.startsWith('nanoclaw-'))
+      .filter((c) => c.status === 'running' && c.configuration.id.startsWith('microclaw-'))
       .map((c) => c.configuration.id);
     for (const name of orphans) {
       try {
@@ -1228,7 +1228,7 @@ function ensureContainerSystemRunning(): void {
 }
 
 /**
- * Copy template CLAUDE.md files from source tree to NANOCLAW_HOME/groups/
+ * Copy template CLAUDE.md files from source tree to MICROCLAW_HOME/groups/
  * on first run, so new installs start with sensible defaults.
  */
 function ensureGroupTemplates(): void {
@@ -1270,6 +1270,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((err) => {
-  logger.error({ err }, 'Failed to start NanoClaw');
+  logger.error({ err }, 'Failed to start MicroClaw');
   process.exit(1);
 });

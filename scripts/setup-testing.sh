@@ -7,7 +7,7 @@ echo ""
 
 # Check if we're in the right directory
 if [ ! -f "package.json" ]; then
-    echo "❌ Error: Run this script from the nanoclaw root directory"
+    echo "❌ Error: Run this script from the microclaw root directory"
     exit 1
 fi
 
@@ -112,8 +112,8 @@ if [[ "$ENABLE_VAULTS" =~ ^[Yy]$ ]]; then
 EOF
 
     # Create mount allowlist
-    mkdir -p ~/.config/nanoclaw
-    cat > ~/.config/nanoclaw/mount-allowlist.json <<EOF
+    mkdir -p ~/.config/microclaw
+    cat > ~/.config/microclaw/mount-allowlist.json <<EOF
 {
   "allowedRoots": [
     {
@@ -144,7 +144,7 @@ EOF
     echo "✅ Vaults created and configured:"
     echo "   Main: $MAIN_VAULT"
     echo "   Private: $PRIVATE_VAULT"
-    echo "   Mount allowlist: ~/.config/nanoclaw/mount-allowlist.json"
+    echo "   Mount allowlist: ~/.config/microclaw/mount-allowlist.json"
 else
     echo "⏭️  Skipping vault setup"
 fi
@@ -190,14 +190,14 @@ echo "Configuration Files:"
 echo "  ✓ data/users.json (owner registered)"
 echo "  ✓ data/registered_groups.json"
 echo "  ✓ data/vault-config.json"
-if [ -f ~/.config/nanoclaw/mount-allowlist.json ]; then
-    echo "  ✓ ~/.config/nanoclaw/mount-allowlist.json"
+if [ -f ~/.config/microclaw/mount-allowlist.json ]; then
+    echo "  ✓ ~/.config/microclaw/mount-allowlist.json"
 fi
 echo ""
 echo "Next Steps:"
 echo "  1. Start Jarvis: npm run dev"
 echo "  2. Send a test message from WhatsApp"
-echo "  3. Check logs: tail -f logs/nanoclaw.log | npx pino-pretty"
+echo "  3. Check logs: tail -f logs/microclaw.log | npx pino-pretty"
 echo "  4. Follow testing guide: docs/TESTING_GUIDE.md"
 echo ""
 echo "🎉 Setup complete! Ready for testing."

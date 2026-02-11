@@ -2,11 +2,11 @@
 
 ## Executive Summary
 
-Transform NanoClaw from a group-based linked-device assistant into **Jarvis**: a dedicated WhatsApp account personal assistant with 4-tier user authorization, unified context management, Obsidian vault integration, and email capabilities.
+Transform MicroClaw from a group-based linked-device assistant into **Jarvis**: a dedicated WhatsApp account personal assistant with 4-tier user authorization, unified context management, Obsidian vault integration, and email capabilities.
 
 ## Core Transformation
 
-### Current: NanoClaw
+### Current: MicroClaw
 - **WhatsApp Mode**: Linked device to user's WhatsApp account
 - **Authorization**: Binary (Main group vs Non-main groups)
 - **Context**: Per-group isolation with separate sessions
@@ -43,7 +43,7 @@ Transform NanoClaw from a group-based linked-device assistant into **Jarvis**: a
 
 3. **Friends**
    - **Passive context only** - cannot invoke Jarvis
-   - Per-group isolation (existing NanoClaw model)
+   - Per-group isolation (existing MicroClaw model)
    - NO Obsidian vault access
    - Messages processed as context when Owner/Family invokes Jarvis
    - Provides context without security risk
@@ -171,7 +171,7 @@ Private Vault (Owner):
 - Stranger: Auto-rejected
 
 **Security:**
-- Credentials stored outside project: `~/.nanoclaw-email/`
+- Credentials stored outside project: `~/.microclaw-email/`
 - Whitelist-based authorization (default deny)
 - Rate limiting: max 50 emails/hour
 - HTML converted to plain text (never render)
@@ -203,7 +203,7 @@ Friend Tier:
   - NO project root access
 ```
 
-**Mount Allowlist** (`~/.config/nanoclaw/mount-allowlist.json`):
+**Mount Allowlist** (`~/.config/microclaw/mount-allowlist.json`):
 - Stored OUTSIDE project root (tamper-proof)
 - Never mounted into containers
 - Explicit whitelist of allowed roots
