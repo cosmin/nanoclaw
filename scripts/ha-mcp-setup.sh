@@ -7,8 +7,26 @@ echo ""
 
 NANOCLAW_HOME="${NANOCLAW_HOME:-$HOME/.nanoclaw}"
 ENV_FILE="$NANOCLAW_HOME/env"
+PLIST_TEMPLATE="$(cd "$(dirname "$0")/.." && pwd)/launchd/com.nanoclaw.ha-mcp.plist"
+PLIST_DEST="$HOME/Library/LaunchAgents/com.nanoclaw.ha-mcp.plist"
 HA_MCP_PORT=8086
 ERRORS=0
+
+# Parse a value from the env file, handling:
+#   - optional "export " prefix
+#   - whitespace around "="
+#   - single/double quoted values
+#   - CRLF line endings
+#   - returns the first match only
+parse_env() {
+    local key="$1" file="$2"
+    local val
+    val=$(sed -n "s/^[[:space:]]*\(export[[:space:]]\{1,\}\)\{0,1\}${key}[[:space:]]*=[[:space:]]*//p" "$file" \
+        | head -n 1 \
+        | tr -d '\r' \
+        | sed "s/^['\"]//; s/['\"]$//; s/[[:space:]]*$//")
+    printf '%s' "$val"
+}
 
 # 1. Check if ha-mcp is installed
 echo "Step 1: ha-mcp Installation"
@@ -32,8 +50,8 @@ if [ ! -f "$ENV_FILE" ]; then
     echo "  Create it with HA_URL and HA_TOKEN entries"
     ERRORS=$((ERRORS + 1))
 else
-    HA_URL=$(sed -n 's/^HA_URL=//p' "$ENV_FILE" 2>/dev/null || true)
-    HA_TOKEN=$(sed -n 's/^HA_TOKEN=//p' "$ENV_FILE" 2>/dev/null || true)
+    HA_URL=$(parse_env HA_URL "$ENV_FILE")
+    HA_TOKEN=$(parse_env HA_TOKEN "$ENV_FILE")
 
     if [ -z "$HA_URL" ]; then
         echo "FAIL: HA_URL not set in $ENV_FILE"
@@ -109,11 +127,36 @@ else
 fi
 echo ""
 
+# 6. Install / update the launchd plist
+echo "Step 6: launchd Plist"
+echo "---------------------"
+if [ $ERRORS -gt 0 ]; then
+    echo "SKIP: Cannot install plist — fix earlier errors first"
+elif [ ! -f "$PLIST_TEMPLATE" ]; then
+    echo "FAIL: Plist template not found at $PLIST_TEMPLATE"
+    ERRORS=$((ERRORS + 1))
+else
+    # Render template by substituting {{...}} placeholders
+    sed \
+        -e "s|{{HA_MCP_PATH}}|${HA_MCP_PATH}|g" \
+        -e "s|{{HOME}}|${HOME}|g" \
+        -e "s|{{HA_URL}}|${HA_URL}|g" \
+        -e "s|{{HA_TOKEN}}|${HA_TOKEN}|g" \
+        "$PLIST_TEMPLATE" > "$PLIST_DEST"
+    echo "OK: Rendered plist to $PLIST_DEST"
+
+    # Reload the service
+    launchctl unload "$PLIST_DEST" 2>/dev/null || true
+    launchctl load "$PLIST_DEST"
+    echo "OK: Loaded $PLIST_DEST"
+fi
+echo ""
+
 # Summary
 echo "Summary"
 echo "======="
 if [ $ERRORS -eq 0 ]; then
-    echo "All checks passed."
+    echo "All checks passed. ha-mcp sidecar is running."
 else
     echo "$ERRORS check(s) failed. Fix the issues above and re-run."
     exit 1

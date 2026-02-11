@@ -17,8 +17,9 @@
     <key>KeepAlive</key>
     <true/>
     <!-- ha-mcp-web expects HOMEASSISTANT_URL/HOMEASSISTANT_TOKEN.
-         The setup script reads HA_URL/HA_TOKEN from ~/.nanoclaw/env
-         and substitutes them into this plist. -->
+         This is a template — {{...}} placeholders are rendered by
+         scripts/ha-mcp-setup.sh which reads HA_URL/HA_TOKEN from
+         ~/.nanoclaw/env and writes the result to ~/Library/LaunchAgents/. -->
     <key>EnvironmentVariables</key>
     <dict>
         <key>PATH</key>

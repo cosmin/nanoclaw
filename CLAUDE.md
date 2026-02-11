@@ -43,6 +43,8 @@ launchctl load ~/Library/LaunchAgents/com.nanoclaw.plist
 launchctl unload ~/Library/LaunchAgents/com.nanoclaw.plist
 
 # ha-mcp sidecar (Home Assistant MCP server on port 8086)
+# First run: ./scripts/ha-mcp-setup.sh renders the plist template and loads it.
+# After that, manage it with:
 launchctl load ~/Library/LaunchAgents/com.nanoclaw.ha-mcp.plist
 launchctl unload ~/Library/LaunchAgents/com.nanoclaw.ha-mcp.plist
 ```
