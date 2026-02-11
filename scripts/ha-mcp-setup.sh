@@ -32,8 +32,8 @@ if [ ! -f "$ENV_FILE" ]; then
     echo "  Create it with HA_URL and HA_TOKEN entries"
     ERRORS=$((ERRORS + 1))
 else
-    HA_URL=$(grep "^HA_URL=" "$ENV_FILE" 2>/dev/null | cut -d= -f2- || true)
-    HA_TOKEN=$(grep "^HA_TOKEN=" "$ENV_FILE" 2>/dev/null | cut -d= -f2- || true)
+    HA_URL=$(sed -n 's/^HA_URL=//p' "$ENV_FILE" 2>/dev/null || true)
+    HA_TOKEN=$(sed -n 's/^HA_TOKEN=//p' "$ENV_FILE" 2>/dev/null || true)
 
     if [ -z "$HA_URL" ]; then
         echo "FAIL: HA_URL not set in $ENV_FILE"
