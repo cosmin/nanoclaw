@@ -41,7 +41,7 @@ NanoClaw (Node.js)          ha-mcp-web (:8086)          Voice Plugin (Python, :1
   Task scheduling             Fuzzy entity search          Learning store
 ```
 
-**ha-mcp** is the centralized Home Assistant layer. All HA access goes through it — container agents via MCP, voice plugin fast path via HTTP. Single HA token, single process.
+**ha-mcp** is the centralized Home Assistant layer ([ha-mcp-web](https://github.com/bendews/ha-mcp-web)). All HA access goes through it — container agents via MCP, voice plugin fast path via HTTP. Single HA token, single process. Install with `npm install -g ha-mcp-web`, configure `HA_URL` and `HA_TOKEN` in `~/.nanoclaw/env`, and manage via `launchctl` (see Service management below).
 
 **Voice plugin** is a fast audio I/O layer with a learnable cache. All reasoning goes to NanoClaw via the HTTP API.
 
