@@ -38,9 +38,23 @@ npm run build        # Compile TypeScript
 
 Service management:
 ```bash
+# NanoClaw main process
 launchctl load ~/Library/LaunchAgents/com.nanoclaw.plist
 launchctl unload ~/Library/LaunchAgents/com.nanoclaw.plist
+
+# ha-mcp sidecar (Home Assistant MCP server on port 8086)
+# First run: ./scripts/ha-mcp-setup.sh renders the plist template and loads it.
+# After that, manage it with:
+launchctl load ~/Library/LaunchAgents/com.nanoclaw.ha-mcp.plist
+launchctl unload ~/Library/LaunchAgents/com.nanoclaw.ha-mcp.plist
 ```
+
+ha-mcp setup and health check:
+```bash
+./scripts/ha-mcp-setup.sh    # Verify install, env vars, connectivity
+```
+
+ha-mcp requires `HA_URL` and `HA_TOKEN` in `~/.nanoclaw/env`. See `config-examples/env.example`.
 
 ## Container Build Cache
 
