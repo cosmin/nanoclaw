@@ -10,6 +10,15 @@ import fs from 'fs';
 import { API_PORT, ENV_FILE_PATH } from './config.js';
 import { logger } from './logger.js';
 
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    public statusCode: number,
+  ) {
+    super(message);
+  }
+}
+
 export interface ApiResponse {
   text: string;
   actions: unknown[];
@@ -24,6 +33,7 @@ export type ProcessMessageFn = (
 let server: http.Server | null = null;
 
 const MAX_BODY_SIZE = 64 * 1024; // 64KB
+const MAX_TEXT_LENGTH = 32 * 1024; // 32KB
 
 function loadApiToken(): string | null {
   try {
@@ -76,6 +86,7 @@ export function startApiServer(processMessage: ProcessMessageFn): void {
   }
 
   server = http.createServer(async (req, res) => {
+    try {
     const url = new URL(
       req.url || '/',
       `http://${req.headers.host || 'localhost'}`,
@@ -124,13 +135,44 @@ export function startApiServer(processMessage: ProcessMessageFn): void {
       try {
         const raw = await readBody(req);
         body = JSON.parse(raw);
-      } catch {
-        sendJson(res, 400, { error: 'Invalid JSON body' });
+      } catch (err) {
+        if (
+          err instanceof Error &&
+          err.message === 'Request body too large'
+        ) {
+          sendJson(res, 413, { error: 'Request body too large' });
+        } else {
+          sendJson(res, 400, { error: 'Invalid JSON body' });
+        }
         return;
       }
 
-      if (!body.text || typeof body.text !== 'string') {
-        sendJson(res, 400, { error: 'Missing required field: text' });
+      if (typeof body.text !== 'string' || !body.text.trim()) {
+        sendJson(res, 400, { error: 'text field cannot be empty' });
+        return;
+      }
+
+      if (body.text.length > MAX_TEXT_LENGTH) {
+        sendJson(res, 400, {
+          error: `text exceeds maximum length of ${MAX_TEXT_LENGTH} bytes`,
+        });
+        return;
+      }
+
+      if (
+        body.context !== undefined &&
+        (typeof body.context !== 'object' ||
+          body.context === null ||
+          Array.isArray(body.context))
+      ) {
+        sendJson(res, 400, { error: 'context must be an object' });
+        return;
+      }
+
+      if (body.channel !== undefined && typeof body.channel !== 'string') {
+        sendJson(res, 400, {
+          error: 'Invalid field: channel must be a string',
+        });
         return;
       }
 
@@ -161,13 +203,28 @@ export function startApiServer(processMessage: ProcessMessageFn): void {
         sendJson(res, 200, response);
       } catch (err) {
         logger.error({ err }, 'API message processing failed');
-        sendJson(res, 500, { error: 'Processing failed' });
+        if (err instanceof ApiError) {
+          sendJson(res, err.statusCode, { error: err.message });
+        } else {
+          sendJson(res, 500, { error: 'Processing failed' });
+        }
       }
       return;
     }
 
     // Not found
     sendJson(res, 404, { error: 'Not found' });
+    } catch (err) {
+      logger.error({ err }, 'Unexpected error in API handler');
+      if (!res.headersSent) {
+        sendJson(res, 500, { error: 'Internal server error' });
+      }
+    }
+  });
+
+  server.on('error', (err) => {
+    logger.error({ err, port: API_PORT }, 'Failed to start HTTP API server');
+    process.exit(1);
   });
 
   server.listen(API_PORT, '127.0.0.1', () => {

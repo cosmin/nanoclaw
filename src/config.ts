@@ -22,10 +22,15 @@ export const VAULT_CONFIG_PATH = path.join(NANOCLAW_HOME, 'vault-config.json');
 export const ENV_FILE_PATH = path.join(NANOCLAW_HOME, 'env');
 export const MAIN_GROUP_FOLDER = 'main';
 
-export const API_PORT = parseInt(
-  process.env.NANOCLAW_API_PORT || '3100',
-  10,
-);
+export const API_PORT = (() => {
+  const port = parseInt(process.env.NANOCLAW_API_PORT || '3100', 10);
+  if (isNaN(port) || port < 1 || port > 65535) {
+    throw new Error(
+      `Invalid NANOCLAW_API_PORT: ${process.env.NANOCLAW_API_PORT}`,
+    );
+  }
+  return port;
+})();
 
 export const CONTAINER_IMAGE =
   process.env.CONTAINER_IMAGE || 'nanoclaw-agent:latest';

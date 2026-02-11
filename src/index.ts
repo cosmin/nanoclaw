@@ -10,7 +10,7 @@ import makeWASocket, {
 } from '@whiskeysockets/baileys';
 import { CronExpressionParser } from 'cron-parser';
 
-import { ApiResponse, startApiServer, stopApiServer } from './api.js';
+import { ApiError, ApiResponse, startApiServer, stopApiServer } from './api.js';
 import {
   ASSISTANT_NAME,
   DATA_DIR,
@@ -480,25 +480,38 @@ async function processApiMessage(
     ([, g]) => g.folder === MAIN_GROUP_FOLDER,
   );
   if (!mainEntry) {
-    throw new Error('Main channel not registered');
+    throw new ApiError('Main channel not configured', 503);
   }
 
   const [chatJid, group] = mainEntry;
 
   // Format as message XML (matching the format the agent expects)
-  const contextStr =
-    Object.keys(context).length > 0
-      ? ` context="${escapeXml(JSON.stringify(context))}"`
-      : '';
+  let contextStr = '';
+  if (Object.keys(context).length > 0) {
+    try {
+      contextStr = ` context="${escapeXml(JSON.stringify(context))}"`;
+    } catch {
+      throw new ApiError('context contains non-serializable values', 400);
+    }
+  }
   const prompt = `<messages>\n<message sender="Owner" time="${new Date().toISOString()}" channel="${escapeXml(channel)}"${contextStr}>${escapeXml(text)}</message>\n</messages>`;
 
-  // Collect output from the agent
-  const textParts: string[] = [];
-
   return new Promise<ApiResponse>((resolve, reject) => {
+    if (queue.isShuttingDown()) {
+      reject(new ApiError('Service is shutting down', 503));
+      return;
+    }
+
+    const TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+    const timer = setTimeout(() => {
+      reject(new ApiError('Request timed out', 504));
+    }, TIMEOUT_MS);
+
     const taskId = `api-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
     queue.enqueueTask(chatJid, taskId, async () => {
+      clearTimeout(timer);
+      const textParts: string[] = [];
       try {
         const output = await runAgent(
           group,
@@ -524,7 +537,10 @@ async function processApiMessage(
         } else {
           resolve({
             text: textParts.join('\n'),
-            actions: [], // Populated when ha-mcp action capture is implemented
+            // NOTE: `actions` is currently always empty and should be treated
+            // as unstable. When implemented, it will contain structured action
+            // descriptors (e.g. { type: string; payload: unknown }).
+            actions: [],
           });
         }
       } catch (err) {
