@@ -28,6 +28,7 @@ interface ContainerInput {
   isScheduledTask?: boolean;
 }
 
+// IPC contract — keep in sync with src/container-runner.ts (HaAction, ContainerOutput)
 interface HaAction {
   entity_id: string;
   domain: string;
@@ -35,6 +36,7 @@ interface HaAction {
   data?: Record<string, unknown>;
 }
 
+// IPC contract — keep in sync with src/container-runner.ts (HaAction, ContainerOutput)
 interface ContainerOutput {
   status: 'success' | 'error';
   result: string | null;
@@ -71,14 +73,21 @@ const HA_CALL_SERVICE_TOOL = 'mcp__home-assistant__ha_call_service';
 /**
  * Resolve the host IP from inside Apple Container.
  * The nameserver in /etc/resolv.conf points to the host gateway.
+ * Memoized: the IP is read once at first call and cached for the process lifetime.
  */
+let cachedHostIp: string | null = null;
 function getHostIp(): string {
+  if (cachedHostIp) return cachedHostIp;
   try {
     const resolv = fs.readFileSync('/etc/resolv.conf', 'utf-8');
     const match = resolv.match(/nameserver\s+(\S+)/);
-    if (match) return match[1];
+    if (match) {
+      cachedHostIp = match[1];
+      return cachedHostIp;
+    }
   } catch { /* fallback below */ }
-  return '192.168.64.1';
+  cachedHostIp = '192.168.64.1';
+  return cachedHostIp;
 }
 
 function getHaMcpUrl(): string {
