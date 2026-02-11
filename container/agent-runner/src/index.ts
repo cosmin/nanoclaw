@@ -16,7 +16,7 @@
 
 import fs from 'fs';
 import path from 'path';
-import { query, HookCallback, PreCompactHookInput } from '@anthropic-ai/claude-agent-sdk';
+import { query, HookCallback, PreCompactHookInput, PostToolUseHookInput } from '@anthropic-ai/claude-agent-sdk';
 import { fileURLToPath } from 'url';
 
 interface ContainerInput {
@@ -28,11 +28,21 @@ interface ContainerInput {
   isScheduledTask?: boolean;
 }
 
+// IPC contract — keep in sync with src/container-runner.ts (HaAction, ContainerOutput)
+interface HaAction {
+  entity_id: string;
+  domain: string;
+  service: string;
+  data?: Record<string, unknown>;
+}
+
+// IPC contract — keep in sync with src/container-runner.ts (HaAction, ContainerOutput)
 interface ContainerOutput {
   status: 'success' | 'error';
   result: string | null;
   newSessionId?: string;
   error?: string;
+  actions?: HaAction[];
 }
 
 interface SessionEntry {
@@ -56,6 +66,66 @@ interface SDKUserMessage {
 const IPC_INPUT_DIR = '/workspace/ipc/input';
 const IPC_INPUT_CLOSE_SENTINEL = path.join(IPC_INPUT_DIR, '_close');
 const IPC_POLL_MS = 500;
+
+const HA_MCP_PORT = 8086; // Must match ha-mcp launchd plist port
+const HA_CALL_SERVICE_TOOL = 'mcp__home-assistant__ha_call_service';
+
+/**
+ * Resolve the host IP from inside Apple Container.
+ * The nameserver in /etc/resolv.conf points to the host gateway.
+ * Memoized: the IP is read once at first call and cached for the process lifetime.
+ */
+let cachedHostIp: string | null = null;
+function getHostIp(): string {
+  if (cachedHostIp) return cachedHostIp;
+  try {
+    const resolv = fs.readFileSync('/etc/resolv.conf', 'utf-8');
+    const match = resolv.match(/nameserver\s+(\S+)/);
+    if (match) {
+      cachedHostIp = match[1];
+      return cachedHostIp;
+    }
+  } catch { /* fallback below */ }
+  cachedHostIp = '192.168.64.1';
+  return cachedHostIp;
+}
+
+function getHaMcpUrl(): string {
+  return `http://${getHostIp()}:${HA_MCP_PORT}/mcp`;
+}
+
+/**
+ * PostToolUse hook that captures Home Assistant service call actions.
+ * Allows NanoClaw to return structured HA actions alongside text responses.
+ *
+ * Only fires on successful tool execution (SDK-level failures go to
+ * PostToolUseFailure instead). We additionally check MCP-level errors
+ * via tool_response.isError — ha-mcp returns isError:true for things
+ * like entity-not-found or HA offline.
+ */
+function createActionCaptureHook(capturedActions: HaAction[]): HookCallback {
+  return async (input, _toolUseId, _context) => {
+    if (input.hook_event_name !== 'PostToolUse') return {};
+    const postToolInput = input as PostToolUseHookInput;
+    if (postToolInput.tool_name === HA_CALL_SERVICE_TOOL) {
+      // Skip MCP-level errors (entity not found, HA offline, permission denied)
+      const response = postToolInput.tool_response as { isError?: boolean } | undefined;
+      if (response?.isError) {
+        log(`Skipping failed HA action (MCP error): ${(postToolInput.tool_input as Record<string, unknown>).entity_id}`);
+        return {};
+      }
+      const params = postToolInput.tool_input as Record<string, unknown>;
+      capturedActions.push({
+        entity_id: String(params.entity_id || ''),
+        domain: String(params.domain || ''),
+        service: String(params.service || ''),
+        ...(params.data ? { data: params.data as Record<string, unknown> } : {}),
+      });
+      log(`Captured HA action: ${params.domain}/${params.service} → ${params.entity_id}`);
+    }
+    return {};
+  };
+}
 
 /**
  * Push-based async iterable for streaming user messages to the SDK.
@@ -334,9 +404,12 @@ async function runQuery(
   mcpServerPath: string,
   containerInput: ContainerInput,
   resumeAt?: string,
-): Promise<{ newSessionId?: string; lastAssistantUuid?: string; closedDuringQuery: boolean }> {
+): Promise<{ newSessionId?: string; lastAssistantUuid?: string; closedDuringQuery: boolean; actions: HaAction[] }> {
   const stream = new MessageStream();
   stream.push(prompt);
+
+  // Accumulate HA actions captured by the PostToolUse hook
+  const capturedActions: HaAction[] = [];
 
   // Poll IPC for follow-up messages and _close sentinel during the query
   let ipcPolling = true;
@@ -388,7 +461,8 @@ async function runQuery(
         'TeamCreate', 'TeamDelete', 'SendMessage',
         'TodoWrite', 'ToolSearch', 'Skill',
         'NotebookEdit',
-        'mcp__nanoclaw__*'
+        'mcp__nanoclaw__*',
+        'mcp__home-assistant__*',
       ],
       permissionMode: 'bypassPermissions',
       allowDangerouslySkipPermissions: true,
@@ -403,9 +477,14 @@ async function runQuery(
             NANOCLAW_IS_MAIN: containerInput.isMain ? '1' : '0',
           },
         },
+        'home-assistant': {
+          type: 'http' as const,
+          url: getHaMcpUrl(),
+        },
       },
       hooks: {
-        PreCompact: [{ hooks: [createPreCompactHook()] }]
+        PreCompact: [{ hooks: [createPreCompactHook()] }],
+        PostToolUse: [{ hooks: [createActionCaptureHook(capturedActions)] }],
       },
     }
   })) {
@@ -431,17 +510,20 @@ async function runQuery(
       resultCount++;
       const textResult = 'result' in message ? (message as { result?: string }).result : null;
       log(`Result #${resultCount}: subtype=${message.subtype}${textResult ? ` text=${textResult.slice(0, 200)}` : ''}`);
+      // Actions are cumulative — each result carries all actions captured since query start.
+      // Consumer should use the last result's actions array for the complete list.
       writeOutput({
         status: 'success',
         result: textResult || null,
-        newSessionId
+        newSessionId,
+        actions: capturedActions.length > 0 ? [...capturedActions] : undefined,
       });
     }
   }
 
   ipcPolling = false;
-  log(`Query done. Messages: ${messageCount}, results: ${resultCount}, lastAssistantUuid: ${lastAssistantUuid || 'none'}, closedDuringQuery: ${closedDuringQuery}`);
-  return { newSessionId, lastAssistantUuid, closedDuringQuery };
+  log(`Query done. Messages: ${messageCount}, results: ${resultCount}, actions: ${capturedActions.length}, lastAssistantUuid: ${lastAssistantUuid || 'none'}, closedDuringQuery: ${closedDuringQuery}`);
+  return { newSessionId, lastAssistantUuid, closedDuringQuery, actions: capturedActions };
 }
 
 async function main(): Promise<void> {

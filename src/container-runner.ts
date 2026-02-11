@@ -35,11 +35,21 @@ export interface ContainerInput {
   effectiveTier?: ContextTier;
 }
 
+// IPC contract — keep in sync with container/agent-runner/src/index.ts (HaAction, ContainerOutput)
+export interface HaAction {
+  entity_id: string;
+  domain: string;
+  service: string;
+  data?: Record<string, unknown>;
+}
+
+// IPC contract — keep in sync with container/agent-runner/src/index.ts (HaAction, ContainerOutput)
 export interface ContainerOutput {
   status: 'success' | 'error';
   result: string | null;
   newSessionId?: string;
   error?: string;
+  actions?: HaAction[];
 }
 
 interface VolumeMount {
