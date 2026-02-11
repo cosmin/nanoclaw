@@ -5,10 +5,10 @@ echo "ha-mcp Sidecar Setup & Health Check"
 echo "===================================="
 echo ""
 
-NANOCLAW_HOME="${NANOCLAW_HOME:-$HOME/.nanoclaw}"
-ENV_FILE="$NANOCLAW_HOME/env"
-PLIST_TEMPLATE="$(cd "$(dirname "$0")/.." && pwd)/launchd/com.nanoclaw.ha-mcp.plist"
-PLIST_DEST="$HOME/Library/LaunchAgents/com.nanoclaw.ha-mcp.plist"
+MICROCLAW_HOME="${MICROCLAW_HOME:-$HOME/.microclaw}"
+ENV_FILE="$MICROCLAW_HOME/env"
+PLIST_TEMPLATE="$(cd "$(dirname "$0")/.." && pwd)/launchd/com.microclaw.ha-mcp.plist"
+PLIST_DEST="$HOME/Library/LaunchAgents/com.microclaw.ha-mcp.plist"
 HA_MCP_PORT=8086
 ERRORS=0
 
@@ -107,7 +107,7 @@ if [ "$HTTP_CODE" = "200" ]; then
     echo "OK: ha-mcp responding on port $HA_MCP_PORT"
 elif [ "$HTTP_CODE" = "000" ]; then
     echo "FAIL: ha-mcp not responding on port $HA_MCP_PORT"
-    echo "  Start with: launchctl load ~/Library/LaunchAgents/com.nanoclaw.ha-mcp.plist"
+    echo "  Start with: launchctl load ~/Library/LaunchAgents/com.microclaw.ha-mcp.plist"
     echo "  Or manually: ha-mcp-web --port $HA_MCP_PORT"
     ERRORS=$((ERRORS + 1))
 else
@@ -118,7 +118,7 @@ echo ""
 # 5. Check log directory
 echo "Step 5: Log Directory"
 echo "---------------------"
-LOG_DIR="$NANOCLAW_HOME/logs"
+LOG_DIR="$MICROCLAW_HOME/logs"
 if [ -d "$LOG_DIR" ]; then
     echo "OK: $LOG_DIR exists"
 else

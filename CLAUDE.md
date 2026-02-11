@@ -1,4 +1,4 @@
-# NanoClaw
+# MicroClaw
 
 Personal Claude assistant. See [README.md](README.md) for philosophy and setup. See [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md) for architecture decisions.
 
@@ -34,23 +34,23 @@ Single Node.js process that connects to WhatsApp, routes messages to Claude Agen
 Three services run on the host, each managed by launchd:
 
 ```
-NanoClaw (Node.js)          ha-mcp-web (:8086)          Voice Plugin (Python, :10300)
+MicroClaw (Node.js)          ha-mcp-web (:8086)          Voice Plugin (Python, :10300)
   WhatsApp channel            HA MCP sidecar               ESP32 WebSocket
   HTTP API (:3100)            97 tools: search,            STT/TTS
   Container spawning          control, state, TTS          Fast path (learned actions)
   Task scheduling             Fuzzy entity search          Learning store
 ```
 
-**ha-mcp** is the centralized Home Assistant layer ([ha-mcp-web](https://github.com/bendews/ha-mcp-web)). All HA access goes through it — container agents via MCP, voice plugin fast path via HTTP. Single HA token, single process. Install with `npm install -g ha-mcp-web`, configure `HA_URL` and `HA_TOKEN` in `~/.nanoclaw/env`, and manage via `launchctl` (see Service management below).
+**ha-mcp** is the centralized Home Assistant layer ([ha-mcp-web](https://github.com/bendews/ha-mcp-web)). All HA access goes through it — container agents via MCP, voice plugin fast path via HTTP. Single HA token, single process. Install with `npm install -g ha-mcp-web`, configure `HA_URL` and `HA_TOKEN` in `~/.microclaw/env`, and manage via `launchctl` (see Service management below).
 
-**Voice plugin** is a fast audio I/O layer with a learnable cache. All reasoning goes to NanoClaw via the HTTP API.
+**Voice plugin** is a fast audio I/O layer with a learnable cache. All reasoning goes to MicroClaw via the HTTP API.
 
 ### Two-Path Voice Resolution
 
 | Path | Latency | Handler |
 |------|---------|---------|
 | Fast path | ~200ms | Voice plugin matches learned phrase, calls ha-mcp directly |
-| NanoClaw path | ~5-15s | Voice plugin POSTs to HTTP API, container agent reasons with ha-mcp |
+| MicroClaw path | ~5-15s | Voice plugin POSTs to HTTP API, container agent reasons with ha-mcp |
 
 ### ha-mcp Tools in Containers
 
@@ -59,7 +59,7 @@ Container agents get HA tools automatically via MCP:
 - `mcp__home-assistant__ha_call_service` — Control devices, TTS, automations
 - `mcp__home-assistant__ha_get_state` — Read sensor values and device state
 
-Action capture: When agents call `ha_call_service`, the agent-runner's PostToolUse hook captures the call. NanoClaw includes captured actions in the API response for the voice plugin's learning store.
+Action capture: When agents call `ha_call_service`, the agent-runner's PostToolUse hook captures the call. MicroClaw includes captured actions in the API response for the voice plugin's learning store.
 
 ### HTTP API
 
@@ -70,8 +70,8 @@ Request:  { "text": "dim the bedroom lights", "channel": "voice", "context": { "
 Response: { "text": "Dimmed the bedroom lights", "actions": [{ "entity_id": "light.bedroom", "domain": "light", "service": "turn_on", "data": { "brightness": 76 } }] }
 ```
 
-- Port: 3100 (configurable via `NANOCLAW_API_PORT`)
-- Auth: `Bearer <NANOCLAW_API_TOKEN>` (token in `~/.nanoclaw/env`)
+- Port: 3100 (configurable via `MICROCLAW_API_PORT`)
+- Auth: `Bearer <MICROCLAW_API_TOKEN>` (token in `~/.microclaw/env`)
 - Async mode: Add `"async": true` for fire-and-forget (returns `202 Accepted`)
 
 `GET /api/health` — Health check (no auth required)
@@ -97,13 +97,13 @@ npm run build        # Compile TypeScript
 
 Service management:
 ```bash
-# NanoClaw main process
-launchctl load ~/Library/LaunchAgents/com.nanoclaw.plist
-launchctl unload ~/Library/LaunchAgents/com.nanoclaw.plist
+# MicroClaw main process
+launchctl load ~/Library/LaunchAgents/com.microclaw.plist
+launchctl unload ~/Library/LaunchAgents/com.microclaw.plist
 
 # ha-mcp sidecar (Home Assistant MCP server on port 8086)
-launchctl load ~/Library/LaunchAgents/com.nanoclaw.ha-mcp.plist
-launchctl unload ~/Library/LaunchAgents/com.nanoclaw.ha-mcp.plist
+launchctl load ~/Library/LaunchAgents/com.microclaw.ha-mcp.plist
+launchctl unload ~/Library/LaunchAgents/com.microclaw.ha-mcp.plist
 ```
 
 ha-mcp setup and health check:
@@ -111,7 +111,7 @@ ha-mcp setup and health check:
 ./scripts/ha-mcp-setup.sh    # Verify install, env vars, connectivity
 ```
 
-ha-mcp requires `HA_URL` and `HA_TOKEN` in `~/.nanoclaw/env`. See `config-examples/env.example`.
+ha-mcp requires `HA_URL` and `HA_TOKEN` in `~/.microclaw/env`. See `config-examples/env.example`.
 
 ## Container Build Cache
 
@@ -122,4 +122,4 @@ container builder stop && container builder rm && container builder start
 ./container/build.sh
 ```
 
-Always verify after rebuild: `container run -i --rm --entrypoint wc nanoclaw-agent:latest -l /app/src/index.ts`
+Always verify after rebuild: `container run -i --rm --entrypoint wc microclaw-agent:latest -l /app/src/index.ts`

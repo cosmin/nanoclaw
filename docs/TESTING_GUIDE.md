@@ -30,7 +30,7 @@ First, we need to register you as the owner in the user registry.
 
 **Get your WhatsApp JID:**
 ```bash
-cd /Users/jarvis/workspace/nanoclaw
+cd /Users/jarvis/workspace/microclaw
 # Start the app in dev mode
 npm run dev
 
@@ -105,9 +105,9 @@ EOF
 
 **Add to mount allowlist:**
 ```bash
-mkdir -p ~/.config/nanoclaw
+mkdir -p ~/.config/microclaw
 
-cat > ~/.config/nanoclaw/mount-allowlist.json <<EOF
+cat > ~/.config/microclaw/mount-allowlist.json <<EOF
 {
   "allowedRoots": [
     {
@@ -140,7 +140,7 @@ EOF
 
 After configuration changes, rebuild the agent container:
 ```bash
-cd /Users/jarvis/workspace/nanoclaw
+cd /Users/jarvis/workspace/microclaw
 ./container/build.sh
 ```
 
@@ -524,7 +524,7 @@ SELECT sender, sender_tier FROM messages WHERE sender_tier IS NOT NULL LIMIT 5;
 **Cause:** Mount allowlist not configured or paths not readable
 
 **Fix:**
-1. Check `~/.config/nanoclaw/mount-allowlist.json` exists
+1. Check `~/.config/microclaw/mount-allowlist.json` exists
 2. Verify vault paths exist and are readable
 3. Check container logs for mount errors
 
@@ -539,11 +539,11 @@ SELECT sender, sender_tier FROM messages WHERE sender_tier IS NOT NULL LIMIT 5;
 **Debug:**
 ```bash
 # Check logs
-tail -f logs/nanoclaw.log
+tail -f logs/microclaw.log
 
 # Look for authorization decisions
-grep "canInvoke" logs/nanoclaw.log
-grep "senderTier" logs/nanoclaw.log
+grep "canInvoke" logs/microclaw.log
+grep "senderTier" logs/microclaw.log
 ```
 
 ### Issue: Vault not accessible
@@ -560,7 +560,7 @@ grep "senderTier" logs/nanoclaw.log
 cat data/vault-config.json
 
 # Check mount allowlist
-cat ~/.config/nanoclaw/mount-allowlist.json
+cat ~/.config/microclaw/mount-allowlist.json
 
 # Check if paths exist
 ls ~/Documents/Obsidian/Main
@@ -596,29 +596,29 @@ sqlite3 store/messages.db "DELETE FROM stranger_detection_cache;"
 
 ### Enable Debug Logging
 
-Jarvis uses `pino` logger. Logs are in `logs/nanoclaw.log`.
+Jarvis uses `pino` logger. Logs are in `logs/microclaw.log`.
 
 **Watch logs in real-time:**
 ```bash
-tail -f logs/nanoclaw.log | pino-pretty
+tail -f logs/microclaw.log | pino-pretty
 ```
 
 **Useful log searches:**
 ```bash
 # Authorization decisions
-grep "canInvoke" logs/nanoclaw.log
+grep "canInvoke" logs/microclaw.log
 
 # Stranger detection
-grep "Strangers detected" logs/nanoclaw.log
+grep "Strangers detected" logs/microclaw.log
 
 # Context tier routing
-grep "contextTier" logs/nanoclaw.log
+grep "contextTier" logs/microclaw.log
 
 # Vault mounting
-grep "vault" logs/nanoclaw.log
+grep "vault" logs/microclaw.log
 
 # Session paths
-grep "session" logs/nanoclaw.log
+grep "session" logs/microclaw.log
 ```
 
 ---

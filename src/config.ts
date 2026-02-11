@@ -12,28 +12,28 @@ export const PROJECT_ROOT = process.cwd();
 export const HOME_DIR = process.env.HOME || os.homedir();
 
 // All runtime data lives outside the source tree
-export const NANOCLAW_HOME = process.env.NANOCLAW_HOME || path.join(HOME_DIR, '.nanoclaw');
-export const STORE_DIR = path.join(NANOCLAW_HOME, 'store');
-export const DATA_DIR = path.join(NANOCLAW_HOME, 'data');
-export const GROUPS_DIR = path.join(NANOCLAW_HOME, 'groups');
-export const LOGS_DIR = path.join(NANOCLAW_HOME, 'logs');
-export const MOUNT_ALLOWLIST_PATH = path.join(NANOCLAW_HOME, 'mount-allowlist.json');
-export const VAULT_CONFIG_PATH = path.join(NANOCLAW_HOME, 'vault-config.json');
-export const ENV_FILE_PATH = path.join(NANOCLAW_HOME, 'env');
+export const MICROCLAW_HOME = process.env.MICROCLAW_HOME || path.join(HOME_DIR, '.microclaw');
+export const STORE_DIR = path.join(MICROCLAW_HOME, 'store');
+export const DATA_DIR = path.join(MICROCLAW_HOME, 'data');
+export const GROUPS_DIR = path.join(MICROCLAW_HOME, 'groups');
+export const LOGS_DIR = path.join(MICROCLAW_HOME, 'logs');
+export const MOUNT_ALLOWLIST_PATH = path.join(MICROCLAW_HOME, 'mount-allowlist.json');
+export const VAULT_CONFIG_PATH = path.join(MICROCLAW_HOME, 'vault-config.json');
+export const ENV_FILE_PATH = path.join(MICROCLAW_HOME, 'env');
 export const MAIN_GROUP_FOLDER = 'main';
 
 export const API_PORT = (() => {
-  const port = parseInt(process.env.NANOCLAW_API_PORT || '3100', 10);
+  const port = parseInt(process.env.MICROCLAW_API_PORT || '3100', 10);
   if (isNaN(port) || port < 1 || port > 65535) {
     throw new Error(
-      `Invalid NANOCLAW_API_PORT: ${process.env.NANOCLAW_API_PORT}`,
+      `Invalid MICROCLAW_API_PORT: ${process.env.MICROCLAW_API_PORT}`,
     );
   }
   return port;
 })();
 
 export const CONTAINER_IMAGE =
-  process.env.CONTAINER_IMAGE || 'nanoclaw-agent:latest';
+  process.env.CONTAINER_IMAGE || 'microclaw-agent:latest';
 export const CONTAINER_TIMEOUT = parseInt(
   process.env.CONTAINER_TIMEOUT || '1800000',
   10,

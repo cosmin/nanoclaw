@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.nanoclaw.ha-mcp</string>
+    <string>com.microclaw.ha-mcp</string>
     <key>ProgramArguments</key>
     <array>
         <string>{{HA_MCP_PATH}}</string>
@@ -19,7 +19,7 @@
     <!-- ha-mcp-web expects HOMEASSISTANT_URL/HOMEASSISTANT_TOKEN.
          This is a template — {{...}} placeholders are rendered by
          scripts/ha-mcp-setup.sh which reads HA_URL/HA_TOKEN from
-         ~/.nanoclaw/env and writes the result to ~/Library/LaunchAgents/. -->
+         ~/.microclaw/env and writes the result to ~/Library/LaunchAgents/. -->
     <key>EnvironmentVariables</key>
     <dict>
         <key>PATH</key>
@@ -36,8 +36,8 @@
         <string>60</string>
     </dict>
     <key>StandardOutPath</key>
-    <string>{{HOME}}/.nanoclaw/logs/ha-mcp.log</string>
+    <string>{{HOME}}/.microclaw/logs/ha-mcp.log</string>
     <key>StandardErrorPath</key>
-    <string>{{HOME}}/.nanoclaw/logs/ha-mcp.error.log</string>
+    <string>{{HOME}}/.microclaw/logs/ha-mcp.error.log</string>
 </dict>
 </plist>

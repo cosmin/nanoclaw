@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document provides the detailed implementation plan for transforming NanoClaw into Jarvis. The work is organized into 5 phases, each with specific tasks, deliverables, and verification steps.
+This document provides the detailed implementation plan for transforming MicroClaw into Jarvis. The work is organized into 5 phases, each with specific tasks, deliverables, and verification steps.
 
 ## Development Workflow
 

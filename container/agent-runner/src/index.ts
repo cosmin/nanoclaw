@@ -1,5 +1,5 @@
 /**
- * NanoClaw Agent Runner
+ * MicroClaw Agent Runner
  * Runs inside a container, receives config via stdin, outputs result to stdout
  *
  * Input protocol:
@@ -96,7 +96,7 @@ function getHaMcpUrl(): string {
 
 /**
  * PostToolUse hook that captures Home Assistant service call actions.
- * Allows NanoClaw to return structured HA actions alongside text responses.
+ * Allows MicroClaw to return structured HA actions alongside text responses.
  *
  * Only fires on successful tool execution (SDK-level failures go to
  * PostToolUseFailure instead). We additionally check MCP-level errors
@@ -173,8 +173,8 @@ async function readStdin(): Promise<string> {
   });
 }
 
-const OUTPUT_START_MARKER = '---NANOCLAW_OUTPUT_START---';
-const OUTPUT_END_MARKER = '---NANOCLAW_OUTPUT_END---';
+const OUTPUT_START_MARKER = '---MICROCLAW_OUTPUT_START---';
+const OUTPUT_END_MARKER = '---MICROCLAW_OUTPUT_END---';
 
 function writeOutput(output: ContainerOutput): void {
   console.log(OUTPUT_START_MARKER);
@@ -461,20 +461,20 @@ async function runQuery(
         'TeamCreate', 'TeamDelete', 'SendMessage',
         'TodoWrite', 'ToolSearch', 'Skill',
         'NotebookEdit',
-        'mcp__nanoclaw__*',
+        'mcp__microclaw__*',
         'mcp__home-assistant__*',
       ],
       permissionMode: 'bypassPermissions',
       allowDangerouslySkipPermissions: true,
       settingSources: ['project', 'user'],
       mcpServers: {
-        nanoclaw: {
+        microclaw: {
           command: 'node',
           args: [mcpServerPath],
           env: {
-            NANOCLAW_CHAT_JID: containerInput.chatJid,
-            NANOCLAW_GROUP_FOLDER: containerInput.groupFolder,
-            NANOCLAW_IS_MAIN: containerInput.isMain ? '1' : '0',
+            MICROCLAW_CHAT_JID: containerInput.chatJid,
+            MICROCLAW_GROUP_FOLDER: containerInput.groupFolder,
+            MICROCLAW_IS_MAIN: containerInput.isMain ? '1' : '0',
           },
         },
         'home-assistant': {
