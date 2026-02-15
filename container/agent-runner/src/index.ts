@@ -68,6 +68,7 @@ const IPC_INPUT_CLOSE_SENTINEL = path.join(IPC_INPUT_DIR, '_close');
 const IPC_POLL_MS = 500;
 
 const HA_MCP_PORT = 8086; // Must match ha-mcp launchd plist port
+const VOICE_MCP_PORT = 10301; // Must match voice pipeline MCP server port
 const HA_CALL_SERVICE_TOOL = 'mcp__home-assistant__ha_call_service';
 
 /**
@@ -92,6 +93,10 @@ function getHostIp(): string {
 
 function getHaMcpUrl(): string {
   return `http://${getHostIp()}:${HA_MCP_PORT}/mcp`;
+}
+
+function getVoiceMcpUrl(): string {
+  return `http://${getHostIp()}:${VOICE_MCP_PORT}/mcp`;
 }
 
 /**
@@ -463,6 +468,7 @@ async function runQuery(
         'NotebookEdit',
         'mcp__microclaw__*',
         'mcp__home-assistant__*',
+        'mcp__voice-pipeline__*',
       ],
       permissionMode: 'bypassPermissions',
       allowDangerouslySkipPermissions: true,
@@ -480,6 +486,10 @@ async function runQuery(
         'home-assistant': {
           type: 'http' as const,
           url: getHaMcpUrl(),
+        },
+        'voice-pipeline': {
+          type: 'http' as const,
+          url: getVoiceMcpUrl(),
         },
       },
       hooks: {
