@@ -94,7 +94,9 @@ export function hasStrangers(
         // Check if participants list has changed
         const participantsChanged =
           participants.length !== cached.participants.length ||
-          participants.some(p => !cached.participants.includes(normalizeJid(p)));
+          participants.some(
+            (p) => !cached.participants.includes(normalizeJid(p)),
+          );
 
         if (!participantsChanged) {
           logger.debug(
@@ -211,7 +213,7 @@ export function determineAgentContext(
 export function getParticipantTiers(
   participants: string[],
 ): GroupParticipant[] {
-  return participants.map(jid => {
+  return participants.map((jid) => {
     const normalizedJid = normalizeJid(jid);
     const tier = getUserTier(normalizedJid);
 

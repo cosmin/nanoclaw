@@ -32,9 +32,7 @@ async function authenticate(): Promise<void> {
 
   if (state.creds.registered) {
     console.log('✓ Already authenticated with WhatsApp');
-    console.log(
-      `  To re-authenticate, delete ${AUTH_DIR} and run again.`,
-    );
+    console.log(`  To re-authenticate, delete ${AUTH_DIR} and run again.`);
     process.exit(0);
   }
 

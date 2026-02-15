@@ -87,9 +87,10 @@ function validateVaultMount(vaultPath: string, vaultName: string): void {
   try {
     resolvedPath = fs.realpathSync(vaultPath);
   } catch (err: any) {
-    const code = (err && typeof err === 'object' && 'code' in err)
-      ? (err as NodeJS.ErrnoException).code
-      : undefined;
+    const code =
+      err && typeof err === 'object' && 'code' in err
+        ? (err as NodeJS.ErrnoException).code
+        : undefined;
     if (code === 'ENOENT') {
       throw new Error(
         `${vaultName} vault path does not exist: ${vaultPath}. ` +
@@ -132,7 +133,8 @@ function buildVolumeMounts(
 
   // Determine context tier: use effectiveTier if provided (from authorization),
   // otherwise fall back to group's contextTier, or isMain logic for legacy behavior
-  const contextTier: ContextTier = effectiveTier || group.contextTier || (isMain ? 'owner' : 'friend');
+  const contextTier: ContextTier =
+    effectiveTier || group.contextTier || (isMain ? 'owner' : 'friend');
 
   logger.debug(
     {
@@ -166,10 +168,17 @@ function buildVolumeMounts(
             containerPath: '/workspace/vaults/private',
             readonly: false,
           });
-          logger.info({ path: privateVaultPath }, 'Private vault mounted for owner');
+          logger.info(
+            { path: privateVaultPath },
+            'Private vault mounted for owner',
+          );
         } catch (err) {
           logger.error(
-            { group: group.name, path: privateVaultPath, error: err instanceof Error ? err.message : String(err) },
+            {
+              group: group.name,
+              path: privateVaultPath,
+              error: err instanceof Error ? err.message : String(err),
+            },
             'Failed to mount private vault - skipping',
           );
         }
@@ -187,7 +196,11 @@ function buildVolumeMounts(
           logger.info({ path: mainVaultPath }, 'Main vault mounted for owner');
         } catch (err) {
           logger.error(
-            { group: group.name, path: mainVaultPath, error: err instanceof Error ? err.message : String(err) },
+            {
+              group: group.name,
+              path: mainVaultPath,
+              error: err instanceof Error ? err.message : String(err),
+            },
             'Failed to mount main vault - skipping',
           );
         }
@@ -214,7 +227,11 @@ function buildVolumeMounts(
           logger.info({ path: mainVaultPath }, 'Main vault mounted for family');
         } catch (err) {
           logger.error(
-            { group: group.name, path: mainVaultPath, error: err instanceof Error ? err.message : String(err) },
+            {
+              group: group.name,
+              path: mainVaultPath,
+              error: err instanceof Error ? err.message : String(err),
+            },
             'Failed to mount main vault - skipping',
           );
         }
@@ -262,13 +279,20 @@ function buildVolumeMounts(
   fs.mkdirSync(sessionDir, { recursive: true });
   const settingsFile = path.join(sessionDir, 'settings.json');
   if (!fs.existsSync(settingsFile)) {
-    fs.writeFileSync(settingsFile, JSON.stringify({
-      env: {
-        CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: '1',
-        CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD: '1',
-        CLAUDE_CODE_DISABLE_AUTO_MEMORY: '0',
-      },
-    }, null, 2) + '\n');
+    fs.writeFileSync(
+      settingsFile,
+      JSON.stringify(
+        {
+          env: {
+            CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: '1',
+            CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD: '1',
+            CLAUDE_CODE_DISABLE_AUTO_MEMORY: '0',
+          },
+        },
+        null,
+        2,
+      ) + '\n',
+    );
   }
 
   // Sync skills from container/skills/ into each session's .claude/skills/
@@ -333,7 +357,12 @@ function buildVolumeMounts(
 
   // Mount agent-runner source from host — recompiled on container startup.
   // Bypasses Apple Container's sticky build cache for code changes.
-  const agentRunnerSrc = path.join(projectRoot, 'container', 'agent-runner', 'src');
+  const agentRunnerSrc = path.join(
+    projectRoot,
+    'container',
+    'agent-runner',
+    'src',
+  );
   mounts.push({
     hostPath: agentRunnerSrc,
     containerPath: '/app/src',
@@ -353,7 +382,10 @@ function buildVolumeMounts(
   return mounts;
 }
 
-function buildContainerArgs(mounts: VolumeMount[], containerName: string): string[] {
+function buildContainerArgs(
+  mounts: VolumeMount[],
+  containerName: string,
+): string[] {
   const args: string[] = ['run', '-i', '--rm', '--name', containerName];
 
   // Apple Container: --mount for readonly, -v for read-write
@@ -514,10 +546,16 @@ export async function runContainerAgent(
 
     const killOnTimeout = () => {
       timedOut = true;
-      logger.error({ group: group.name, containerName }, 'Container timeout, stopping gracefully');
+      logger.error(
+        { group: group.name, containerName },
+        'Container timeout, stopping gracefully',
+      );
       exec(`container stop ${containerName}`, { timeout: 15000 }, (err) => {
         if (err) {
-          logger.warn({ group: group.name, containerName, err }, 'Graceful stop failed, force killing');
+          logger.warn(
+            { group: group.name, containerName, err },
+            'Graceful stop failed, force killing',
+          );
           container.kill('SIGKILL');
         }
       });
@@ -538,14 +576,17 @@ export async function runContainerAgent(
       if (timedOut) {
         const ts = new Date().toISOString().replace(/[:.]/g, '-');
         const timeoutLog = path.join(logsDir, `container-${ts}.log`);
-        fs.writeFileSync(timeoutLog, [
-          `=== Container Run Log (TIMEOUT) ===`,
-          `Timestamp: ${new Date().toISOString()}`,
-          `Group: ${group.name}`,
-          `Container: ${containerName}`,
-          `Duration: ${duration}ms`,
-          `Exit Code: ${code}`,
-        ].join('\n'));
+        fs.writeFileSync(
+          timeoutLog,
+          [
+            `=== Container Run Log (TIMEOUT) ===`,
+            `Timestamp: ${new Date().toISOString()}`,
+            `Group: ${group.name}`,
+            `Container: ${containerName}`,
+            `Duration: ${duration}ms`,
+            `Exit Code: ${code}`,
+          ].join('\n'),
+        );
 
         logger.error(
           { group: group.name, containerName, duration, code },
@@ -562,7 +603,8 @@ export async function runContainerAgent(
 
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
       const logFile = path.join(logsDir, `container-${timestamp}.log`);
-      const isVerbose = process.env.LOG_LEVEL === 'debug' || process.env.LOG_LEVEL === 'trace';
+      const isVerbose =
+        process.env.LOG_LEVEL === 'debug' || process.env.LOG_LEVEL === 'trace';
 
       const logLines = [
         `=== Container Run Log ===`,
@@ -705,7 +747,10 @@ export async function runContainerAgent(
 
     container.on('error', (err) => {
       clearTimeout(timeout);
-      logger.error({ group: group.name, containerName, error: err }, 'Container spawn error');
+      logger.error(
+        { group: group.name, containerName, error: err },
+        'Container spawn error',
+      );
       resolve({
         status: 'error',
         result: null,

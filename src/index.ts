@@ -107,7 +107,10 @@ function loadLidMappings(): void {
       logger.info({ count }, 'Loaded LID-to-phone mappings from auth state');
     }
   } catch (err) {
-    logger.debug({ err }, 'Could not load LID mappings (auth state may not exist yet)');
+    logger.debug(
+      { err },
+      'Could not load LID mappings (auth state may not exist yet)',
+    );
   }
 }
 
@@ -156,10 +159,7 @@ function loadState(): void {
 
 function saveState(): void {
   setRouterState('last_timestamp', lastTimestamp);
-  setRouterState(
-    'last_agent_timestamp',
-    JSON.stringify(lastAgentTimestamp),
-  );
+  setRouterState('last_agent_timestamp', JSON.stringify(lastAgentTimestamp));
 }
 
 function registerGroup(jid: string, group: RegisteredGroup): void {
@@ -241,8 +241,9 @@ function escapeXml(s: string): string {
 }
 
 function formatMessages(messages: NewMessage[]): string {
-  const lines = messages.map((m) =>
-    `<message sender="${escapeXml(m.sender_name)}" time="${m.timestamp}">${escapeXml(m.content)}</message>`,
+  const lines = messages.map(
+    (m) =>
+      `<message sender="${escapeXml(m.sender_name)}" time="${m.timestamp}">${escapeXml(m.content)}</message>`,
   );
   return `<messages>\n${lines.join('\n')}\n</messages>`;
 }
@@ -263,10 +264,7 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
 
   // Get all messages since last agent interaction
   const sinceTimestamp = lastAgentTimestamp[chatJid] || '';
-  const missedMessages = getMessagesSince(
-    chatJid,
-    sinceTimestamp,
-  );
+  const missedMessages = getMessagesSince(chatJid, sinceTimestamp);
 
   if (missedMessages.length === 0) return true;
 
@@ -298,19 +296,28 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
         return true;
       }
     } catch (err) {
-      logger.error({ group: group.name, err }, 'Failed to fetch group metadata for stranger detection');
+      logger.error(
+        { group: group.name, err },
+        'Failed to fetch group metadata for stranger detection',
+      );
     }
   }
 
   // Determine sender tiers and check invocation rights
   // Find the trigger message sender (or last message sender for main/no-trigger)
-  const triggerMsg = missedMessages.find((m) => TRIGGER_PATTERN.test(m.content.trim()))
-    || missedMessages[missedMessages.length - 1];
+  const triggerMsg =
+    missedMessages.find((m) => TRIGGER_PATTERN.test(m.content.trim())) ||
+    missedMessages[missedMessages.length - 1];
   const authResult = canInvoke(triggerMsg.sender, isGroupChat);
 
   if (!authResult.canInvoke) {
     logger.info(
-      { group: group.name, sender: triggerMsg.sender, tier: authResult.tier, reason: authResult.reason },
+      {
+        group: group.name,
+        sender: triggerMsg.sender,
+        tier: authResult.tier,
+        reason: authResult.reason,
+      },
       'Message sender not authorized to invoke Jarvis',
     );
     // Advance cursor so we don't re-check these messages
@@ -321,7 +328,10 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
   }
 
   // Determine effective tier for this invocation
-  const effectiveTier: ContextTier = determineAgentContext(authResult.tier, group.contextTier);
+  const effectiveTier: ContextTier = determineAgentContext(
+    authResult.tier,
+    group.contextTier,
+  );
 
   const prompt = formatMessages(missedMessages);
 
@@ -343,7 +353,10 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
   const resetIdleTimer = () => {
     if (idleTimer) clearTimeout(idleTimer);
     idleTimer = setTimeout(() => {
-      logger.debug({ group: group.name }, 'Idle timeout, closing container stdin');
+      logger.debug(
+        { group: group.name },
+        'Idle timeout, closing container stdin',
+      );
       queue.closeStdin(chatJid);
     }, IDLE_TIMEOUT);
   };
@@ -351,24 +364,36 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
   await setTyping(chatJid, true);
   let hadError = false;
 
-  const output = await runAgent(group, prompt, chatJid, effectiveTier, async (result) => {
-    // Streaming output callback — called for each agent result
-    if (result.result) {
-      const raw = typeof result.result === 'string' ? result.result : JSON.stringify(result.result);
-      // Strip <internal>...</internal> blocks — agent uses these for internal reasoning
-      const text = raw.replace(/<internal>[\s\S]*?<\/internal>/g, '').trim();
-      logger.info({ group: group.name }, `Agent output: ${raw.slice(0, 200)}`);
-      if (text) {
-        await sendMessage(chatJid, text);
+  const output = await runAgent(
+    group,
+    prompt,
+    chatJid,
+    effectiveTier,
+    async (result) => {
+      // Streaming output callback — called for each agent result
+      if (result.result) {
+        const raw =
+          typeof result.result === 'string'
+            ? result.result
+            : JSON.stringify(result.result);
+        // Strip <internal>...</internal> blocks — agent uses these for internal reasoning
+        const text = raw.replace(/<internal>[\s\S]*?<\/internal>/g, '').trim();
+        logger.info(
+          { group: group.name },
+          `Agent output: ${raw.slice(0, 200)}`,
+        );
+        if (text) {
+          await sendMessage(chatJid, text);
+        }
+        // Only reset idle timer on actual results, not session-update markers (result: null)
+        resetIdleTimer();
       }
-      // Only reset idle timer on actual results, not session-update markers (result: null)
-      resetIdleTimer();
-    }
 
-    if (result.status === 'error') {
-      hadError = true;
-    }
-  });
+      if (result.status === 'error') {
+        hadError = true;
+      }
+    },
+  );
 
   await setTyping(chatJid, false);
   if (idleTimer) clearTimeout(idleTimer);
@@ -377,7 +402,10 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
     // Roll back cursor so retries can re-process these messages
     lastAgentTimestamp[chatJid] = previousCursor;
     saveState();
-    logger.warn({ group: group.name }, 'Agent error, rolled back message cursor for retry');
+    logger.warn(
+      { group: group.name },
+      'Agent error, rolled back message cursor for retry',
+    );
     return false;
   }
 
@@ -441,7 +469,8 @@ async function runAgent(
         isMain,
         effectiveTier,
       },
-      (proc, containerName) => queue.registerProcess(chatJid, proc, containerName, group.folder),
+      (proc, containerName) =>
+        queue.registerProcess(chatJid, proc, containerName, group.folder),
       wrappedOnOutput,
     );
 
@@ -553,7 +582,10 @@ async function processApiMessage(
 async function sendMessage(jid: string, text: string): Promise<void> {
   if (!waConnected) {
     outgoingQueue.push({ jid, text });
-    logger.info({ jid, length: text.length, queueSize: outgoingQueue.length }, 'WA disconnected, message queued');
+    logger.info(
+      { jid, length: text.length, queueSize: outgoingQueue.length },
+      'WA disconnected, message queued',
+    );
     return;
   }
   try {
@@ -562,7 +594,10 @@ async function sendMessage(jid: string, text: string): Promise<void> {
   } catch (err) {
     // If send fails, queue it for retry on reconnect
     outgoingQueue.push({ jid, text });
-    logger.warn({ jid, err, queueSize: outgoingQueue.length }, 'Failed to send, message queued');
+    logger.warn(
+      { jid, err, queueSize: outgoingQueue.length },
+      'Failed to send, message queued',
+    );
   }
 }
 
@@ -571,7 +606,10 @@ async function flushOutgoingQueue(): Promise<void> {
   if (flushing || outgoingQueue.length === 0) return;
   flushing = true;
   try {
-    logger.info({ count: outgoingQueue.length }, 'Flushing outgoing message queue');
+    logger.info(
+      { count: outgoingQueue.length },
+      'Flushing outgoing message queue',
+    );
     // Process one at a time — sendMessage re-queues on failure internally.
     // Shift instead of splice so unattempted messages stay in the queue
     // if an unexpected error occurs.
@@ -630,10 +668,7 @@ function startIpcWatcher(): void {
                   isMain ||
                   (targetGroup && targetGroup.folder === sourceGroup)
                 ) {
-                  await sendMessage(
-                    data.chatJid,
-                    data.text,
-                  );
+                  await sendMessage(data.chatJid, data.text);
                   logger.info(
                     { chatJid: data.chatJid, sourceGroup },
                     'IPC message sent',
@@ -961,7 +996,10 @@ async function connectWhatsApp(): Promise<void> {
       waConnected = false;
       const reason = (lastDisconnect?.error as any)?.output?.statusCode;
       const shouldReconnect = reason !== DisconnectReason.loggedOut;
-      logger.info({ reason, shouldReconnect, queuedMessages: outgoingQueue.length }, 'Connection closed');
+      logger.info(
+        { reason, shouldReconnect, queuedMessages: outgoingQueue.length },
+        'Connection closed',
+      );
 
       if (shouldReconnect) {
         logger.info('Reconnecting...');
@@ -988,7 +1026,10 @@ async function connectWhatsApp(): Promise<void> {
         const lidUser = sock.user.lid?.split(':')[0];
         if (lidUser && phoneUser) {
           lidToPhoneMap[lidUser] = `${phoneUser}@s.whatsapp.net`;
-          logger.debug({ lidUser, phoneUser }, 'LID to phone mapping set from sock.user');
+          logger.debug(
+            { lidUser, phoneUser },
+            'LID to phone mapping set from sock.user',
+          );
         }
       }
 
@@ -1014,7 +1055,8 @@ async function connectWhatsApp(): Promise<void> {
         registeredGroups: () => registeredGroups,
         getSessions: () => sessions,
         queue,
-        onProcess: (groupJid, proc, containerName, groupFolder) => queue.registerProcess(groupJid, proc, containerName, groupFolder),
+        onProcess: (groupJid, proc, containerName, groupFolder) =>
+          queue.registerProcess(groupJid, proc, containerName, groupFolder),
         sendMessage,
         assistantName: ASSISTANT_NAME,
       });
@@ -1053,12 +1095,7 @@ async function connectWhatsApp(): Promise<void> {
         // so authorization lookups match the phone-based user registry
         const rawSender = msg.key.participant || msg.key.remoteJid || '';
         const translatedSender = translateJid(rawSender);
-        storeMessage(
-          msg,
-          chatJid,
-          msg.pushName || undefined,
-          translatedSender,
-        );
+        storeMessage(msg, chatJid, msg.pushName || undefined, translatedSender);
       }
     }
   });
@@ -1076,10 +1113,7 @@ async function startMessageLoop(): Promise<void> {
   while (true) {
     try {
       const jids = Object.keys(registeredGroups);
-      const { messages, newTimestamp } = getNewMessages(
-        jids,
-        lastTimestamp,
-      );
+      const { messages, newTimestamp } = getNewMessages(jids, lastTimestamp);
 
       if (messages.length > 0) {
         logger.info({ count: messages.length }, 'New messages');
@@ -1210,17 +1244,26 @@ function ensureContainerSystemRunning(): void {
       stdio: ['pipe', 'pipe', 'pipe'],
       encoding: 'utf-8',
     });
-    const containers: { status: string; configuration: { id: string } }[] = JSON.parse(output || '[]');
+    const containers: { status: string; configuration: { id: string } }[] =
+      JSON.parse(output || '[]');
     const orphans = containers
-      .filter((c) => c.status === 'running' && c.configuration.id.startsWith('microclaw-'))
+      .filter(
+        (c) =>
+          c.status === 'running' && c.configuration.id.startsWith('microclaw-'),
+      )
       .map((c) => c.configuration.id);
     for (const name of orphans) {
       try {
         execSync(`container stop ${name}`, { stdio: 'pipe' });
-      } catch { /* already stopped */ }
+      } catch {
+        /* already stopped */
+      }
     }
     if (orphans.length > 0) {
-      logger.info({ count: orphans.length, names: orphans }, 'Stopped orphaned containers');
+      logger.info(
+        { count: orphans.length, names: orphans },
+        'Stopped orphaned containers',
+      );
     }
   } catch (err) {
     logger.warn({ err }, 'Failed to clean up orphaned containers');

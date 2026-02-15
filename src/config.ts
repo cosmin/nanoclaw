@@ -12,12 +12,16 @@ export const PROJECT_ROOT = process.cwd();
 export const HOME_DIR = process.env.HOME || os.homedir();
 
 // All runtime data lives outside the source tree
-export const MICROCLAW_HOME = process.env.MICROCLAW_HOME || path.join(HOME_DIR, '.microclaw');
+export const MICROCLAW_HOME =
+  process.env.MICROCLAW_HOME || path.join(HOME_DIR, '.microclaw');
 export const STORE_DIR = path.join(MICROCLAW_HOME, 'store');
 export const DATA_DIR = path.join(MICROCLAW_HOME, 'data');
 export const GROUPS_DIR = path.join(MICROCLAW_HOME, 'groups');
 export const LOGS_DIR = path.join(MICROCLAW_HOME, 'logs');
-export const MOUNT_ALLOWLIST_PATH = path.join(MICROCLAW_HOME, 'mount-allowlist.json');
+export const MOUNT_ALLOWLIST_PATH = path.join(
+  MICROCLAW_HOME,
+  'mount-allowlist.json',
+);
 export const VAULT_CONFIG_PATH = path.join(MICROCLAW_HOME, 'vault-config.json');
 export const ENV_FILE_PATH = path.join(MICROCLAW_HOME, 'env');
 export const MAIN_GROUP_FOLDER = 'main';
@@ -43,10 +47,7 @@ export const CONTAINER_MAX_OUTPUT_SIZE = parseInt(
   10,
 ); // 10MB default
 export const IPC_POLL_INTERVAL = 1000;
-export const IDLE_TIMEOUT = parseInt(
-  process.env.IDLE_TIMEOUT || '1800000',
-  10,
-); // 30min default — how long to keep container alive after last result
+export const IDLE_TIMEOUT = parseInt(process.env.IDLE_TIMEOUT || '1800000', 10); // 30min default — how long to keep container alive after last result
 export const MAX_CONCURRENT_CONTAINERS = Math.max(
   1,
   parseInt(process.env.MAX_CONCURRENT_CONTAINERS || '5', 10) || 5,
