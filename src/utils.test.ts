@@ -3,11 +3,15 @@ import { normalizeJid } from './utils.js';
 
 describe('normalizeJid', () => {
   it('strips LID-style :N suffix from local part', () => {
-    expect(normalizeJid('17252273945:4@s.whatsapp.net')).toBe('17252273945@s.whatsapp.net');
+    expect(normalizeJid('17252273945:4@s.whatsapp.net')).toBe(
+      '17252273945@s.whatsapp.net',
+    );
   });
 
   it('preserves JID without suffix', () => {
-    expect(normalizeJid('19719980254@s.whatsapp.net')).toBe('19719980254@s.whatsapp.net');
+    expect(normalizeJid('19719980254@s.whatsapp.net')).toBe(
+      '19719980254@s.whatsapp.net',
+    );
   });
 
   it('handles LID domain JIDs', () => {

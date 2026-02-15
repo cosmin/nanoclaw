@@ -97,7 +97,9 @@ function getUserTierFromRegistry(
   }
 
   // Check if family
-  if (registry.family.some((user) => normalizeJid(user.jid) === normalizedJid)) {
+  if (
+    registry.family.some((user) => normalizeJid(user.jid) === normalizedJid)
+  ) {
     return 'family';
   }
 
@@ -193,13 +195,16 @@ export function removeUser(jid: string): boolean {
   const registry = loadUserRegistry();
 
   // Protect owner
-  if (registry.owner.jid && normalizeJid(registry.owner.jid) === normalizedJid) {
+  if (
+    registry.owner.jid &&
+    normalizeJid(registry.owner.jid) === normalizedJid
+  ) {
     throw new Error('Cannot remove owner from registry');
   }
 
   // Try to remove from family
   const familyIndex = registry.family.findIndex(
-    user => normalizeJid(user.jid) === normalizedJid
+    (user) => normalizeJid(user.jid) === normalizedJid,
   );
   if (familyIndex !== -1) {
     registry.family.splice(familyIndex, 1);
@@ -210,7 +215,7 @@ export function removeUser(jid: string): boolean {
 
   // Try to remove from friend
   const friendIndex = registry.friend.findIndex(
-    user => normalizeJid(user.jid) === normalizedJid
+    (user) => normalizeJid(user.jid) === normalizedJid,
   );
   if (friendIndex !== -1) {
     registry.friend.splice(friendIndex, 1);
@@ -226,7 +231,9 @@ export function removeUser(jid: string): boolean {
 /**
  * Get all users in a specific tier
  */
-export function getUsersByTier(tier: 'owner' | 'family' | 'friend'): UserInfo[] {
+export function getUsersByTier(
+  tier: 'owner' | 'family' | 'friend',
+): UserInfo[] {
   const registry = loadUserRegistry();
 
   if (tier === 'owner') {
@@ -247,13 +254,16 @@ export function getUserInfo(jid: string): UserInfo | null {
   const registry = loadUserRegistry();
 
   // Check owner
-  if (registry.owner.jid && normalizeJid(registry.owner.jid) === normalizedJid) {
+  if (
+    registry.owner.jid &&
+    normalizeJid(registry.owner.jid) === normalizedJid
+  ) {
     return registry.owner;
   }
 
   // Check family
   const familyUser = registry.family.find(
-    user => normalizeJid(user.jid) === normalizedJid
+    (user) => normalizeJid(user.jid) === normalizedJid,
   );
   if (familyUser) {
     return familyUser;
@@ -261,7 +271,7 @@ export function getUserInfo(jid: string): UserInfo | null {
 
   // Check friend
   const friendUser = registry.friend.find(
-    user => normalizeJid(user.jid) === normalizedJid
+    (user) => normalizeJid(user.jid) === normalizedJid,
   );
   if (friendUser) {
     return friendUser;

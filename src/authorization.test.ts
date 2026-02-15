@@ -32,7 +32,12 @@ vi.mock('fs', async () => {
 });
 
 import fs from 'fs';
-import { canInvoke, determineAgentContext, hasStrangers, clearStrangerCache } from './authorization.js';
+import {
+  canInvoke,
+  determineAgentContext,
+  hasStrangers,
+  clearStrangerCache,
+} from './authorization.js';
 import { invalidateRegistryCache } from './user-registry.js';
 import type { UserRegistry } from './types.js';
 
@@ -42,9 +47,25 @@ const FAMILY_PHONE_JID = '15551234567@s.whatsapp.net';
 const STRANGER_JID = '19999999999@s.whatsapp.net';
 
 const testRegistry: UserRegistry = {
-  owner: { jid: OWNER_PHONE_JID, name: 'Owner', addedAt: '2024-01-01T00:00:00Z' },
-  family: [{ jid: FAMILY_PHONE_JID, name: 'Family Member', addedAt: '2024-01-01T00:00:00Z' }],
-  friend: [{ jid: '15559876543@s.whatsapp.net', name: 'Friend', addedAt: '2024-01-01T00:00:00Z' }],
+  owner: {
+    jid: OWNER_PHONE_JID,
+    name: 'Owner',
+    addedAt: '2024-01-01T00:00:00Z',
+  },
+  family: [
+    {
+      jid: FAMILY_PHONE_JID,
+      name: 'Family Member',
+      addedAt: '2024-01-01T00:00:00Z',
+    },
+  ],
+  friend: [
+    {
+      jid: '15559876543@s.whatsapp.net',
+      name: 'Friend',
+      addedAt: '2024-01-01T00:00:00Z',
+    },
+  ],
 };
 
 function setupRegistry(registry: UserRegistry = testRegistry) {
@@ -147,7 +168,10 @@ describe('hasStrangers', () => {
   });
 
   it('returns false when all participants are registered', () => {
-    const result = hasStrangers('group@g.us', [OWNER_PHONE_JID, FAMILY_PHONE_JID]);
+    const result = hasStrangers('group@g.us', [
+      OWNER_PHONE_JID,
+      FAMILY_PHONE_JID,
+    ]);
     expect(result).toBe(false);
   });
 
