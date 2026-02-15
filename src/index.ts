@@ -27,6 +27,7 @@ import {
 import {
   AvailableGroup,
   ContainerOutput,
+  HaAction,
   runContainerAgent,
   writeGroupsSnapshot,
   writeTasksSnapshot,
@@ -512,6 +513,7 @@ async function processApiMessage(
     queue.enqueueTask(chatJid, taskId, async () => {
       clearTimeout(timer);
       const textParts: string[] = [];
+      const allActions: HaAction[] = [];
       try {
         const output = await runAgent(
           group,
@@ -529,6 +531,9 @@ async function processApiMessage(
                 .trim();
               if (cleaned) textParts.push(cleaned);
             }
+            if (result.actions) {
+              allActions.push(...result.actions);
+            }
           },
         );
 
@@ -537,10 +542,7 @@ async function processApiMessage(
         } else {
           resolve({
             text: textParts.join('\n'),
-            // NOTE: `actions` is currently always empty and should be treated
-            // as unstable. When implemented, it will contain structured action
-            // descriptors (e.g. { type: string; payload: unknown }).
-            actions: [],
+            actions: allActions,
           });
         }
       } catch (err) {
